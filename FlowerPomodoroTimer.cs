@@ -10,7 +10,12 @@ using System.Windows.Forms;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
 using System.Threading;
+using System.IO;
 
+/*
+ * 2026-03-19 更新說明：
+ * 使用 OpenAI Codex優化程式碼結構，增加註解說明，修正一些潛在的問題。
+ */
 
 /*
  * 2021-04-06 大改版
@@ -35,16 +40,12 @@ namespace Flower_Pomodoro_Timer
     public partial class formFlowerPomodoroTimer : Form
     {
         #region 變數
-        public formHelp m_FormHelp; //說明視窗
-                                    // 修正 CS0120: 需要有物件參考，才可使用非靜態欄位、方法或屬性 'WorkSchedule.LoadWorkSchedules(string)'
-                                    // 修正方式：先建立 WorkSchedule 實例，再呼叫其方法
-        List<WorkSchedule> workSchedules = new WorkSchedule().LoadWorkSchedules("WorkList.txt"); //讀取工作清單，包含星期、開始時間、結束時間、工作項目
-        // Update the instantiation of WorkSchedule to use an instance method instead of a static method.  
-        // This resolves the CS0120 error by ensuring that the method is called on an object instance.  
+        readonly WorkSchedule m_ScheduleService = new WorkSchedule();
+        List<WorkSchedule> workSchedules = new List<WorkSchedule>();
 
-        PictureBox m_FirstBar = new PictureBox(); //第一條BAR
-        System.Windows.Forms.Timer m_TimerMain; //整體時間使用狀況的計時器(切換Work或Rest狀態)
-        System.Windows.Forms.Timer m_TimerActiveWindow; //視窗使用狀況的計時器
+        BarChartBox m_FirstBar = new BarChartBox(); //第一條BAR
+        System.Windows.Forms.Timer m_TimerMain = null!; //整體時間使用狀況的計時器(切換Work或Rest狀態)
+        System.Windows.Forms.Timer m_TimerActiveWindow = null!; //視窗使用狀況的計時器
 
         DateTime m_FirstStartTime; //第一次起始時間
         DateTime m_NewStartTime; //按下暫停之後的新一次起始時間
@@ -68,25 +69,25 @@ namespace Flower_Pomodoro_Timer
         public class AWParentStatus //改用class是因為用struct會被限制無法直接指定List struct內部成員的值，需先生成一個struct P，指定成員數值後，再讓List struct[0]=P
         {
             public int Seconds; //使用秒數
-            public string FullName; //程序名稱+視窗分頁名稱：Chrome:Facebook...
-            public string ProcessName; //程序名稱：Chrome、IE
+            public string ProcessName = string.Empty; //程序名稱：Chrome、IE
             public int ProcessOrder; //依使用秒數來排序，給TreeView父階層用
             public Button ProcessPlusButton = new Button(); //+號按鍵
             public bool ProcessPlusOr = true;
-            public PictureBox ProcessPBox = new PictureBox();
+            public BarChartBox ProcessPBox = new BarChartBox();
             public List<AWStatus> MyAWStatus = new List<AWStatus>();
+            public Dictionary<string, AWStatus> WindowTitleMap = new Dictionary<string, AWStatus>(StringComparer.Ordinal);
         }
         List<AWParentStatus> m_AWParentStatus = new List<AWParentStatus>(); //把找到過的動作
+        readonly Dictionary<string, AWParentStatus> m_AWParentByProcess = new Dictionary<string, AWParentStatus>(StringComparer.OrdinalIgnoreCase);
         public class AWStatus //改用class是因為用struct會被限制無法直接指定List struct內部成員的值，需先生成一個struct P，指定成員數值後，再讓List struct[0]=P
         {
             public int Seconds; //使用秒數
-            public string FullName; //程序名稱+視窗分頁名稱：Chrome:Facebook...
-            public string ProcessName; //程序名稱：Chrome、IE
-            public string WindowTitleName; //視窗分頁名稱：Facebook...
+            public string ProcessName = string.Empty; //程序名稱：Chrome、IE
+            public string WindowTitleName = string.Empty; //視窗分頁名稱：Facebook...
             public int WindowTitleOrder; //依使用秒數來排序，給TreeView子階層用
-            public PictureBox WindowTitlePBox = new PictureBox();
+            public BarChartBox WindowTitlePBox = new BarChartBox();
         }
-        String m_LastAWParentFullName = "";
+        string m_LastAWParentFullName = "";
         int m_LastAWParentIndex = -1;
  
 
@@ -124,19 +125,8 @@ namespace Flower_Pomodoro_Timer
         // 在 formFlowerPomodoroTimer 建構子中，List<WorkSchedule> workSchedules 初始化前加入防呆檢查
         public formFlowerPomodoroTimer()
         {
-            string workListPath = "WorkList.txt";
-            if (!File.Exists(workListPath))
-            {
-                // 自動建立 WorkList.txt 並寫入預設內容
-                File.WriteAllText(workListPath,
-                @"# 範例格式：星期,開始時間,結束時間,工作項目
-                # 例如：Monday,08:00,12:00,早上工作
-                # null 代表每天
-                null,09:00,12:00,上午工作
-                null,13:00,18:00,下午工作
-                ");
-            }
-            workSchedules = new WorkSchedule().LoadWorkSchedules(workListPath); //讀取工作清單
+            string workListPath = Path.Combine(AppContext.BaseDirectory, "WorkList.txt");
+            workSchedules = m_ScheduleService.LoadWorkSchedules(workListPath); //讀取工作清單
             InitializeComponent();
             InitializeFirstBar();
             InitializeMainTimer();
@@ -145,12 +135,14 @@ namespace Flower_Pomodoro_Timer
             ChangeFormColor();
             m_TopMost = TopMost;
         }
+        // 設定視窗尺寸為正常大小
         private void SetFormSizeNormal()
         {
             this.FormBorderStyle = FormBorderStyle.Sizable;
             // Retrieve the working rectangle from the Screen class
             // using the PrimaryScreen and the WorkingArea properties.
-            System.Drawing.Rectangle workingRectangle = Screen.PrimaryScreen.WorkingArea;
+            Screen screen = Screen.PrimaryScreen ?? Screen.AllScreens.First();
+            System.Drawing.Rectangle workingRectangle = screen.WorkingArea;
             // Set the size of the form slightly less than size of 
             // working rectangle.
             MinimumSize = new Size(1360, 360);
@@ -171,18 +163,20 @@ namespace Flower_Pomodoro_Timer
             buttonStart.Size = new Size(88, 40);
             buttonStart.Font = new Font(buttonStart.Font.FontFamily, 22, buttonStart.Font.Style);
             buttonStart.Location = new Point(125, 165);
-            buttonStart_SizeChanged(null,null);
+            buttonStart_SizeChanged(this, EventArgs.Empty);
 
             labelTotalTimer.Size = new Size(310, 95);
             labelTotalTimer.Font = new Font(labelTimer.Font.FontFamily, 60, labelTimer.Font.Style);
             labelTotalTimer.Location = new Point(20, 220);
         }
+        //縮小視窗到右下角，僅顯示主要計時器和總計時器
         private void SetFormSizeMini()
         {
             this.FormBorderStyle = FormBorderStyle.None;
             // Retrieve the working rectangle from the Screen class
             // using the PrimaryScreen and the WorkingArea properties.
-            System.Drawing.Rectangle workingRectangle = Screen.PrimaryScreen.WorkingArea;
+            Screen screen = Screen.PrimaryScreen ?? Screen.AllScreens.First();
+            System.Drawing.Rectangle workingRectangle = screen.WorkingArea;
             // Set the size of the form slightly less than size of 
             // working rectangle.
             MinimumSize = new Size(180, 160);
@@ -203,7 +197,7 @@ namespace Flower_Pomodoro_Timer
             buttonStart.Size = new Size(44, 24);
             buttonStart.Font = new Font(buttonStart.Font.FontFamily, 12, buttonStart.Font.Style);
             buttonStart.Location = new Point(60, 90);
-            buttonStart_SizeChanged(null, null);
+            buttonStart_SizeChanged(this, EventArgs.Empty);
 
             labelTotalTimer.Size = new Size(140, 40);
             labelTotalTimer.Font = new Font(labelTimer.Font.FontFamily, 24, labelTimer.Font.Style);
@@ -222,7 +216,7 @@ namespace Flower_Pomodoro_Timer
             // Call this procedure when the application starts.  
             // Set to 1 second.  
             m_TimerMain = new System.Windows.Forms.Timer();
-            m_TimerMain.Interval = 100;
+            m_TimerMain.Interval = 1000;
             m_TimerMain.Tick += new EventHandler(TimerMain_Tick);
 
             // Enable timer.  
@@ -242,35 +236,39 @@ namespace Flower_Pomodoro_Timer
             LastWindow = IntPtr.Zero;
         }
 
-        private void TimerMain_Tick(object Sender, EventArgs e) //顯示整體秒數並決定是否切換狀態 Work或Rest
+        private void TimerMain_Tick(object? Sender, EventArgs e) //顯示整體秒數並決定是否切換狀態 Work或Rest
         {
             TimeSpan tmpTime = m_PhaseAccumulateTime + DateTime.Now.Subtract(m_NewPhaseStartTime);
-            // Set the caption to the current time.  
             labelTimer.Text = tmpTime.ToString(@"mm\:ss");
-            labelTotalTimer.Text = DateTime.Now.Subtract(m_FirstStartTime).ToString(@"hh\:mm\:ss");
+
+            TimeSpan totalElapsed = m_TotalAccumulateTime;
+            if (m_TimerMain.Enabled)
+            {
+                totalElapsed += DateTime.Now.Subtract(m_NewStartTime);
+            }
+            labelTotalTimer.Text = totalElapsed.ToString(@"hh\:mm\:ss");
+
             switch (m_WorkStates)
             {
                 case eWorkStates.WORK:
-                    //if (tmpTime.Seconds >= 10) //測試用超過10秒
-                    if (tmpTime.Minutes >= 55) //超過55分鐘
+                    if (tmpTime.Minutes >= 55)
                     {
                         ChangeWorkState(eWorkStates.REST);
-                        TopMost = true; //最上層顯示
+                        TopMost = true;
                     }
                     break;
                 case eWorkStates.REST:
-                    //if (tmpTime.Seconds >= 10) //測試用超過10秒
-                    if (tmpTime.Minutes >= 5) //超過5分鐘
+                    if (tmpTime.Minutes >= 5)
                     {
                         ChangeWorkState(eWorkStates.WORK);
-                        TopMost = m_TopMost; //回歸上次調整的最上層顯示設定
+                        TopMost = m_TopMost;
                     }
                     break;
                 case eWorkStates.PAUSE:
-                    break;
                 default:
                     break;
             }
+
             if (TopMost)
             {
                 buttonAlwaysTop.Text = "╦";
@@ -281,51 +279,49 @@ namespace Flower_Pomodoro_Timer
                 buttonAlwaysTop.Text = "╩";
                 toolTipAll.SetToolTip(buttonAlwaysTop, "開啟最上層顯示");
             }
-
-
         }
-        private void TimerActiveWindow_Tick(object sender, EventArgs e) //偵測目前是哪一個視窗在工作
+
+        private void TimerActiveWindow_Tick(object? sender, EventArgs e) //偵測目前是哪一個視窗在工作
         {
-            //取得最上層視窗資訊，用來統計使用者執行各種程式的分鐘數。
-            //http://codingjames.blogspot.com/2010/09/cforegroundwindow.html
-            // get foreground window handle
-            IntPtr hwnd = GetForegroundWindow();
-            //if (LastWindow != hwnd)
-            //{
-                /// get foreground process from handle
+            try
+            {
+                IntPtr hwnd = GetForegroundWindow();
+                if (hwnd == IntPtr.Zero)
+                {
+                    return;
+                }
+
                 int pId;
                 GetWindowThreadProcessId(hwnd, out pId);
-                Process p = Process.GetProcessById(pId);
-
-            //https://ithelp.ithome.com.tw/articles/10198779
-            const int nChars = 256;
-                System.Text.StringBuilder WindowTitle = new System.Text.StringBuilder(nChars);
-                if (GetWindowText(hwnd, WindowTitle, nChars) > 0)
+                if (pId == 0)
                 {
-                    /* //有些視窗Title是簡體，某些字變成?，嘗試轉碼失敗，以後再解決
-                    //System.Console.OutputEncoding = System.Text.Encoding.Unicode; //沒用反而是錯誤
-                    //Console.WriteLine("測試轉碼之前 ProcessName：{0}+WindowTitle：{1}+AWFullName：{2}", p.ProcessName, WindowTitle.ToString(), p.ProcessName + ":" + WindowTitle.ToString());
-                    //string tmpProcessName;
-                    ////byte[] buffer = Encoding.GetEncoding("GB2312").GetBytes(p.ProcessName);
-                    //byte[] buffer = Encoding.GetEncoding(936).GetBytes(p.ProcessName);
-                    //tmpProcessName = Encoding.UTF8.GetString(buffer);
-                    //string tmpWindowTitle;
-                    //byte[] buffer2 = Encoding.GetEncoding(936).GetBytes(WindowTitle.ToString());
-                    ////tmpWindowTitle = Encoding.UTF8.GetString(buffer2);
-                    ////Byte[] buffer2 = Encoding.Default.GetBytes(WindowTitle.ToString());
-                    //tmpWindowTitle = Encoding.Unicode.GetString(buffer2);
-                    //string tmpAWFullName = tmpProcessName + ":" + tmpWindowTitle + "轉碼GB2312";
-                    //Console.WriteLine("測試轉碼後 ProcessName：{0}+WindowTitle：{1}+AWFullName：{2}", tmpProcessName, tmpWindowTitle, tmpAWFullName);
-                    //CalAWParentSec(tmpAWFullName, m_LastAWParentFullName, tmpProcessName, tmpWindowTitle); //計算使用秒數
-                    */
-                    string tmpAWFullName = p.ProcessName + ":" + WindowTitle.ToString();
-                    CalAWParentSec(tmpAWFullName, m_LastAWParentFullName, p.ProcessName, WindowTitle.ToString()); //計算使用秒數
-                    SortAWParentStatus();
-                    SetAWParentStatusBars();
+                    return;
                 }
-                LastWindow = hwnd;
-            //}
 
+                Process p = Process.GetProcessById(pId);
+                const int nChars = 256;
+                StringBuilder windowTitle = new StringBuilder(nChars);
+                if (GetWindowText(hwnd, windowTitle, nChars) <= 0)
+                {
+                    return;
+                }
+
+                string currentWindowTitle = windowTitle.ToString().Trim();
+                if (string.IsNullOrEmpty(currentWindowTitle))
+                {
+                    return;
+                }
+
+                string tmpAWFullName = p.ProcessName + ":" + currentWindowTitle;
+                CalAWParentSec(tmpAWFullName, m_LastAWParentFullName, p.ProcessName, currentWindowTitle);
+                SortAWParentStatus();
+                SetAWParentStatusBars();
+                LastWindow = hwnd;
+            }
+            catch (Exception)
+            {
+                // 前景視窗在切換瞬間可能已消失，略過本輪統計即可。
+            }
         }
 
         private void ChangeWorkState(eWorkStates _workStates) //更改工作狀態，Work或Rest
@@ -370,152 +366,110 @@ namespace Flower_Pomodoro_Timer
             return task?.Task ?? "目前無排定工作";
         }
 
-        #region 處理秒數資料
+                #region 處理秒數資料
+        private const int MaxProcessesToRender = 20;
+
         private void CalAWParentSec(string _AWFullName, string _LastAWFullName, string _ProcessName, string _WindowTitle) //計算每一個視窗的使用時間秒數，並創建新生成的狀態橫條
         {
-            int tmpParentCount = 0; 
-            int tmpCount = 0;
-            bool findOr = false; //有沒有在清單中找到已儲存的ActiveWindowName
-            while (m_AWParentStatus.Count > tmpParentCount) //在清單中找已儲存的ActiveWindowName
+            if (string.IsNullOrWhiteSpace(_ProcessName) || string.IsNullOrWhiteSpace(_WindowTitle))
             {
-                if (_ProcessName == m_AWParentStatus[tmpParentCount].ProcessName)
-                {
-                    bool findWindowTitleNameOr = false;
-                    m_AWParentStatus[tmpParentCount].Seconds++;
-                    //找到子階層，並添加秒數
-                    foreach (var item in m_AWParentStatus[tmpParentCount].MyAWStatus)
-                    {
-                        if (item.WindowTitleName == _WindowTitle)//找到子階層，並添加秒數
-                        {
-                            item.Seconds++;
-                            findWindowTitleNameOr = true;
-                            break;
-                        }
-                    }
-                    if (!findWindowTitleNameOr)//沒找到子階層，添加子階層
-                    {
-                        //添加子階層資料
-                        AWStatus tmpAWStatus = new AWStatus();
-                        tmpAWStatus.ProcessName = _ProcessName;
-                        tmpAWStatus.WindowTitleName = _WindowTitle;
-                        tmpAWStatus.Seconds = 1;
-                        tmpAWStatus.WindowTitleOrder = m_AWParentStatus[tmpParentCount].MyAWStatus.Count;
-                        tmpAWStatus.WindowTitlePBox = new PictureBox();
-                        tmpAWStatus.WindowTitlePBox.Location = new Point(360, 0);
-                        tmpAWStatus.WindowTitlePBox.Size = new Size(1000, 30);
-                        tmpAWStatus.WindowTitlePBox.ForeColor = Color.DodgerBlue;
-                        //tmpAWStatus.WindowTitlePBox.BorderStyle = BorderStyle.FixedSingle;
-
-                        Controls.Add(tmpAWStatus.WindowTitlePBox);
-                        m_AWParentStatus[tmpParentCount].MyAWStatus.Add(tmpAWStatus);
-                    }
-
-                    m_TotalAWAccumulateTime = m_TotalAWAccumulateTime.Add(TimeSpan.FromSeconds(1)); //累加一秒
-                    m_LastAWParentFullName = _ProcessName;
-                    m_LastAWParentIndex = tmpParentCount;
-                    //SetProcessValue(MyProgressBars[tmpCount], MyAWStatus[tmpCount].Name, MyAWStatus[tmpCount].Seconds);
-                    //建立新的應用視窗名稱或僅增加秒數
-                    //CalAWSec();
-                    findOr = true;
-                    break;
-                }
-                tmpParentCount++;
+                return;
             }
-            if (!findOr) //新的視窗資料
+
+            if (!m_AWParentByProcess.TryGetValue(_ProcessName, out AWParentStatus? parent))
             {
-                //添加父階層資料
-                AWParentStatus tmpAWParentStatus = new AWParentStatus();
-                tmpAWParentStatus.ProcessName = _ProcessName;
-                tmpAWParentStatus.Seconds = 1;
-                tmpAWParentStatus.ProcessOrder = m_AWParentStatus.Count;
-                //添加父階層按鍵
-                tmpAWParentStatus.ProcessPlusButton = new Button();
-                tmpAWParentStatus.ProcessPlusButton.FlatStyle = FlatStyle.Flat;
-                tmpAWParentStatus.ProcessPlusButton.FlatAppearance.BorderSize = 0;
-                tmpAWParentStatus.ProcessPlusButton.BackColor = m_PBarBackColor;
-                tmpAWParentStatus.ProcessPlusButton.ForeColor = m_PBarForeColor;
-                tmpAWParentStatus.ProcessPlusButton.Size = new Size(30, 30);
-                tmpAWParentStatus.ProcessPlusButton.Image = imageListPlus.Images[0];
-                tmpAWParentStatus.ProcessPlusButton.Click += new System.EventHandler(this.buttonPlus_Click);
-                tmpAWParentStatus.ProcessPlusButton.Tag = tmpAWParentStatus;
-                toolTipAll.SetToolTip(tmpAWParentStatus.ProcessPlusButton, "展開/收起");
-                Controls.Add(tmpAWParentStatus.ProcessPlusButton);
-                //添加父階層圖片
-                tmpAWParentStatus.ProcessPBox = new PictureBox();
-                tmpAWParentStatus.ProcessPBox.Location = new Point(360, 0);
-                tmpAWParentStatus.ProcessPBox.Size = new Size(1000, 30);
-                tmpAWParentStatus.ProcessPBox.ForeColor = Color.DodgerBlue;
-                tmpAWParentStatus.ProcessPBox.BorderStyle = BorderStyle.FixedSingle;
-                Controls.Add(tmpAWParentStatus.ProcessPBox);
-                m_AWParentStatus.Add(tmpAWParentStatus);
-
-                m_TotalAWAccumulateTime = m_TotalAWAccumulateTime.Add(TimeSpan.FromSeconds(1)); //累加一秒
-                m_LastAWParentFullName = _ProcessName;
-                m_LastAWParentIndex = m_AWParentStatus.Count - 1;
-                //Console.WriteLine(MyAWStatus.Count);
-                //CalAWSec();
-
-                //添加子階層資料
-                AWStatus tmpAWStatus = new AWStatus();
-                tmpAWStatus.ProcessName = _ProcessName;
-                tmpAWStatus.WindowTitleName = _WindowTitle;
-                tmpAWStatus.Seconds = 1;
-                tmpAWStatus.WindowTitleOrder = m_AWParentStatus[m_AWParentStatus.Count - 1].MyAWStatus.Count;
-                //添加子階層圖片
-                tmpAWStatus.WindowTitlePBox = new PictureBox();
-                tmpAWStatus.WindowTitlePBox.Location = new Point(400, 0);
-                tmpAWStatus.WindowTitlePBox.Size = new Size(960, 30);
-                tmpAWStatus.WindowTitlePBox.ForeColor = Color.DodgerBlue;
-                //tmpAWStatus.WindowTitlePBox.BorderStyle = BorderStyle.FixedSingle;
-
-                Controls.Add(tmpAWStatus.WindowTitlePBox);
-                m_AWParentStatus[m_AWParentStatus.Count - 1].MyAWStatus.Add(tmpAWStatus);
+                parent = CreateParentStatus(_ProcessName);
+                m_AWParentByProcess[_ProcessName] = parent;
+                m_AWParentStatus.Add(parent);
             }
+
+            parent.Seconds++;
+
+            if (!parent.WindowTitleMap.TryGetValue(_WindowTitle, out AWStatus? child))
+            {
+                child = CreateChildStatus(_ProcessName, _WindowTitle);
+                parent.WindowTitleMap[_WindowTitle] = child;
+                parent.MyAWStatus.Add(child);
+                Controls.Add(child.WindowTitlePBox);
+            }
+
+            child.Seconds++;
+            m_TotalAWAccumulateTime = m_TotalAWAccumulateTime.Add(TimeSpan.FromSeconds(1));
+            m_LastAWParentFullName = _ProcessName;
+            m_LastAWParentIndex = parent.ProcessOrder;
+        }
+
+        private AWParentStatus CreateParentStatus(string processName)//創建父階層狀態，包含應用程式名稱和對應的橫條和按鍵
+        {
+            AWParentStatus parent = new AWParentStatus
+            {
+                ProcessName = processName,
+                Seconds = 0,
+                ProcessOrder = m_AWParentStatus.Count,
+                ProcessPlusOr = true,
+                ProcessPlusButton = new Button(),
+                ProcessPBox = new BarChartBox()
+            };
+
+            parent.ProcessPlusButton.FlatStyle = FlatStyle.Flat;
+            parent.ProcessPlusButton.FlatAppearance.BorderSize = 0;
+            parent.ProcessPlusButton.BackColor = m_PBarBackColor;
+            parent.ProcessPlusButton.ForeColor = m_PBarForeColor;
+            parent.ProcessPlusButton.Size = new Size(30, 30);
+            parent.ProcessPlusButton.Image = imageListPlus.Images[0];
+            parent.ProcessPlusButton.Click += new EventHandler(buttonPlus_Click);
+            parent.ProcessPlusButton.Tag = parent;
+            toolTipAll.SetToolTip(parent.ProcessPlusButton, "展開/收起");
+            Controls.Add(parent.ProcessPlusButton);
+
+            parent.ProcessPBox.Location = new Point(360, 0);
+            parent.ProcessPBox.Size = new Size(1000, 30);
+            parent.ProcessPBox.ForeColor = Color.DodgerBlue;
+            Controls.Add(parent.ProcessPBox);
+
+            return parent;
+        }
+
+        private AWStatus CreateChildStatus(string processName, string windowTitle)
+        {
+            AWStatus status = new AWStatus
+            {
+                ProcessName = processName,
+                WindowTitleName = windowTitle,
+                Seconds = 0,
+                WindowTitlePBox = new BarChartBox()
+            };
+
+            status.WindowTitlePBox.Location = new Point(400, 0);
+            status.WindowTitlePBox.Size = new Size(960, 30);
+            status.WindowTitlePBox.ForeColor = Color.DodgerBlue;
+            return status;
         }
 
         private void SortAWParentStatus() //排序AW父階層的使用秒數順序，取出前20個。
         {
-            for (int i = 0; i < m_AWParentStatus.Count; i++)
+            List<AWParentStatus> orderedParents = m_AWParentStatus
+                .OrderByDescending(x => x.Seconds)
+                .ThenBy(x => x.ProcessName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            for (int i = 0; i < orderedParents.Count; i++)
             {
-                //排序父階層m_AWParentStatus
-                for (int j = i+1; j < m_AWParentStatus.Count; j++) 
-                {
-                    if (
-                        (m_AWParentStatus[i].Seconds <= m_AWParentStatus[j].Seconds 
-                        && m_AWParentStatus[i].ProcessOrder <= m_AWParentStatus[j].ProcessOrder) 
-                        ||(m_AWParentStatus[i].Seconds > m_AWParentStatus[j].Seconds
-                        && m_AWParentStatus[i].ProcessOrder > m_AWParentStatus[j].ProcessOrder)
-                        )
-                    {
-                        int tmpOrder = m_AWParentStatus[i].ProcessOrder;
-                        m_AWParentStatus[i].ProcessOrder = m_AWParentStatus[j].ProcessOrder;
-                        m_AWParentStatus[j].ProcessOrder = tmpOrder;
-                    }
-                }
-                Console.WriteLine(m_AWParentStatus[i].ProcessName +  " : " + m_AWParentStatus[i].ProcessOrder);
-                SortAWStatus(m_AWParentStatus[i]); //呼叫排序子階層
+                orderedParents[i].ProcessOrder = i;
+                SortAWStatus(orderedParents[i]);
             }
         }
 
         private void SortAWStatus(AWParentStatus _myAWParentStatus) //排序AW子階層的使用秒數順序。
         {
-            for (int i = 0; i < _myAWParentStatus.MyAWStatus.Count; i++)
+            List<AWStatus> orderedChildren = _myAWParentStatus.MyAWStatus
+                .OrderByDescending(x => x.Seconds)
+                .ThenBy(x => x.WindowTitleName, StringComparer.Ordinal)
+                .ToList();
+
+            for (int i = 0; i < orderedChildren.Count; i++)
             {
-                //排序
-                for (int j = 0; j < _myAWParentStatus.MyAWStatus.Count; j++)
-                {
-                    if (
-                        (_myAWParentStatus.MyAWStatus[i].Seconds < _myAWParentStatus.MyAWStatus[j].Seconds 
-                        && _myAWParentStatus.MyAWStatus[i].WindowTitleOrder < _myAWParentStatus.MyAWStatus[j].WindowTitleOrder)
-                        //|| (_myAWParentStatus.MyAWStatus[i].Seconds > _myAWParentStatus.MyAWStatus[j].Seconds
-                        //&& _myAWParentStatus.MyAWStatus[i].WindowTitleOrder > _myAWParentStatus.MyAWStatus[j].WindowTitleOrder)
-                        )
-                    {
-                        int tmpOrder = _myAWParentStatus.MyAWStatus[i].WindowTitleOrder;
-                        _myAWParentStatus.MyAWStatus[i].WindowTitleOrder = _myAWParentStatus.MyAWStatus[j].WindowTitleOrder;
-                        _myAWParentStatus.MyAWStatus[j].WindowTitleOrder = tmpOrder;
-                    }
-                }
+                orderedChildren[i].WindowTitleOrder = i;
             }
         }
         #endregion
@@ -523,8 +477,6 @@ namespace Flower_Pomodoro_Timer
         #region 顯示橫條
         private void SetAWParentStatusBars() //設置父階層橫條的數值，
         {
-            //Console.WriteLine("\n\n\n");
-            //第一行先顯示離開時間長度
             int tmpT = (int)DateTime.Now.Subtract(m_FirstStartTime).Subtract(m_TotalAWAccumulateTime).TotalSeconds;
             if (tmpT <= 0)
             {
@@ -532,151 +484,92 @@ namespace Flower_Pomodoro_Timer
             }
             else
             {
-                SetPicValue(m_FirstBar, "您離開了些許時間 ", tmpT);
+                SetPicValue(m_FirstBar, "您離開了些許時間", tmpT);
             }
-            //第二行開始顯示視窗使用時間
-            int tmpCurrentRow = 1; //目前畫到第幾行
-            for (int i = 0; i < m_AWParentStatus.Count; i++)
+
+            foreach (AWParentStatus parent in m_AWParentStatus)
             {
-                foreach (var item in m_AWParentStatus)
+                parent.ProcessPlusButton.Visible = false;
+                parent.ProcessPBox.Visible = false;
+                foreach (AWStatus child in parent.MyAWStatus)
                 {
-                    //Console.WriteLine(i.ToString() + item.Name + item.Order.ToString());
-                    if (item.ProcessOrder == i)
-                    {
-                        Console.WriteLine("tmpCurrentRow : " + tmpCurrentRow);
-                        tmpCurrentRow = ShowParentPicBox(item, tmpCurrentRow); //顯示父節點
-                        //Console.WriteLine("Drawing " + i.ToString() + item.Name + item.Order.ToString() + "\n");
-                        
-                        tmpCurrentRow = SetAWStatusBars(item, tmpCurrentRow, item.ProcessPlusOr); //繪製子階層
-                    }
+                    child.WindowTitlePBox.Visible = false;
                 }
             }
-        }
-        public void SetPicValue(PictureBox picBar, string AWName, int value) //繪製picBar狀態橫條，目前僅用在第一列顯示離開時間BAR
-        {
-            //https://blog.csdn.net/zhuimengshizhe87/article/details/20640157
-            TimeSpan t = TimeSpan.FromSeconds(value);
-            string tString = t.ToString(@"hh\:mm\:ss");
-            string str = tString + " : " + AWName;
-            //Font font = new Font("Times New Roman", (float)11, FontStyle.Regular);
-            Font font = new Font("標楷體", (float)11, FontStyle.Regular);
-            PointF pt = new PointF(0, picBar.Height / 2 - 10);
-            //PointF pt = new PointF(pBar.Width / 2 - 10, pBar.Height / 2 - 10);
-            Pen penB = new Pen(Brushes.DodgerBlue);
-            picBar.CreateGraphics().Clear(picBar.BackColor);
-            //picBar.Value = value;
-            //picBar.Refresh();
-            int tmpV;
-            if (m_TotalAWAccumulateTime.TotalSeconds > 0)
+
+            int tmpCurrentRow = 1;
+            foreach (AWParentStatus parent in m_AWParentStatus.OrderBy(x => x.ProcessOrder).Take(MaxProcessesToRender))
             {
-                tmpV = value * picBar.Width / (int)m_TotalAWAccumulateTime.TotalSeconds;
+                tmpCurrentRow = ShowParentPicBox(parent, tmpCurrentRow);
+                tmpCurrentRow = SetAWStatusBars(parent, tmpCurrentRow, parent.ProcessPlusOr);
             }
-            else
-            {
-                tmpV = 1;
-            }
-            picBar.CreateGraphics().FillRectangle(new SolidBrush(m_PBarBackColor), 0, 0, tmpV, 30);
-            picBar.CreateGraphics().DrawString(str, font, new SolidBrush(m_PBarForeColor), pt);
         }
 
-        public int ShowParentPicBox(AWParentStatus _AWParentStatus, int _currentRow) //繪製父層picBar狀態橫條，目前畫在第幾行
+        public void SetPicValue(BarChartBox picBar, string awName, int value) //繪製picBar狀態橫條，目前僅用在第一列顯示離開時間BAR
         {
-            //https://blog.csdn.net/zhuimengshizhe87/article/details/20640157
-            TimeSpan t = TimeSpan.FromSeconds(_AWParentStatus.Seconds);
+            TimeSpan t = TimeSpan.FromSeconds(Math.Max(0, value));
             string tString = t.ToString(@"hh\:mm\:ss");
-            string str = tString + " : " + _AWParentStatus.ProcessOrder + " : " + _AWParentStatus.ProcessName;
-//            Font font = new Font("Times New Roman", (float)11, FontStyle.Regular);
-            Font font = new Font("標楷體", (float)11, FontStyle.Regular);
-            PointF pt = new PointF(0, _AWParentStatus.ProcessPBox.Height / 2 - 10);
-            Pen penB = new Pen(Brushes.DodgerBlue);
-            int tmpV;
-            if (m_TotalAWAccumulateTime.TotalSeconds > 0)
-            {
-                tmpV = _AWParentStatus.Seconds
-                    * _AWParentStatus.ProcessPBox.Width
-                    / (int)m_TotalAWAccumulateTime.TotalSeconds;
-            }
-            else
-            {
-                tmpV = 1;
-            }
-            _AWParentStatus.ProcessPlusButton.Location = new Point(330, _currentRow * 30);
-            _AWParentStatus.ProcessPBox.Location = new Point(360, _currentRow * 30);
-            Console.WriteLine("tmpV : " + tmpV);
-            //_AWParentStatus.ProcessPBox.CreateGraphics().Clear(_AWParentStatus.ProcessPBox.BackColor);
-            _AWParentStatus.ProcessPBox.Refresh();
-            _AWParentStatus.ProcessPBox.CreateGraphics()
-                .FillRectangle(new SolidBrush(m_PBarBackColor), 0, 0, tmpV, 30);
-            _AWParentStatus.ProcessPBox.CreateGraphics()
-                .DrawString(str, font, new SolidBrush(m_PBarForeColor), pt);
-            //_AWParentStatus.ProcessPBox.Refresh();
+            string text = tString + " : " + awName;
+            float ratio = CalculateRatio(value);
+            picBar.SetBar(text, ratio, m_PBarBackColor, m_PBarForeColor);
+        }
+
+        public int ShowParentPicBox(AWParentStatus _awParentStatus, int _currentRow) //繪製父層picBar狀態橫條，目前畫在第幾行
+        {
+            TimeSpan t = TimeSpan.FromSeconds(_awParentStatus.Seconds);
+            string tString = t.ToString(@"hh\:mm\:ss");
+            string text = tString + " : " + _awParentStatus.ProcessOrder + " : " + _awParentStatus.ProcessName;
+
+            _awParentStatus.ProcessPlusButton.Location = new Point(330, _currentRow * 30);
+            _awParentStatus.ProcessPlusButton.Visible = true;
+            _awParentStatus.ProcessPBox.Location = new Point(360, _currentRow * 30);
+            _awParentStatus.ProcessPBox.Visible = true;
+            _awParentStatus.ProcessPBox.SetBar(text, CalculateRatio(_awParentStatus.Seconds), m_PBarBackColor, m_PBarForeColor);
 
             _currentRow++;
             return _currentRow;
         }
 
-        private int SetAWStatusBars(AWParentStatus _aWParentStatus, int _tmpCurrentRow, bool _ProcessPlusOr) //設置子階層橫條的數值，
+        private int SetAWStatusBars(AWParentStatus _awParentStatus, int _tmpCurrentRow, bool _processPlusOr) //設置子階層橫條的數值
         {
-            //第二行開始顯示視窗使用時間
-            for (int i = 0; i < _aWParentStatus.MyAWStatus.Count; i++)
+            if (_processPlusOr)
             {
-                foreach (var item in _aWParentStatus.MyAWStatus)
-                {
-                    //Console.WriteLine(i.ToString() + item.Name + item.Order.ToString());
-                    if (item.WindowTitleOrder == i)
-                    {
-                        Console.WriteLine("tmpCurrentRow : " + _tmpCurrentRow);
-                        if (_ProcessPlusOr)
-                        {
-                            item.WindowTitlePBox.Visible = false;
-                        }
-                        else
-                        {
-                            _tmpCurrentRow = ShowPicBox(item, _tmpCurrentRow);
-                            //Console.WriteLine("Drawing " + i.ToString() + item.Name + item.Order.ToString() + "\n");
-                        }
-                    }
-                }
+                return _tmpCurrentRow;
             }
+
+            foreach (AWStatus item in _awParentStatus.MyAWStatus.OrderBy(x => x.WindowTitleOrder))
+            {
+                _tmpCurrentRow = ShowPicBox(item, _tmpCurrentRow);
+            }
+
             return _tmpCurrentRow;
         }
 
-        public int ShowPicBox(AWStatus _AWStatus, int _currentRow) //繪製picBar狀態橫條，目前畫在第幾行
+        public int ShowPicBox(AWStatus _awStatus, int _currentRow) //繪製picBar狀態橫條，目前畫在第幾行
         {
-            //https://blog.csdn.net/zhuimengshizhe87/article/details/20640157
-            TimeSpan t = TimeSpan.FromSeconds(_AWStatus.Seconds);
+            TimeSpan t = TimeSpan.FromSeconds(_awStatus.Seconds);
             string tString = t.ToString(@"hh\:mm\:ss");
-            string str = tString + " : " + _AWStatus.WindowTitleOrder + " : " + _AWStatus.WindowTitleName;
-            //Font font = new Font("Times New Roman", (float)11, FontStyle.Regular);
-            Font font = new Font("標楷體", (float)11, FontStyle.Regular);
-            PointF pt = new PointF(0, _AWStatus.WindowTitlePBox.Height / 2 - 10);
-            Pen penB = new Pen(Brushes.DodgerBlue);
-            int tmpV;
-            if (m_TotalAWAccumulateTime.TotalSeconds > 0)
-            {
-                tmpV = _AWStatus.Seconds
-                    * _AWStatus.WindowTitlePBox.Width
-                    / (int)m_TotalAWAccumulateTime.TotalSeconds;
-            }
-            else
-            {
-                tmpV = 1;
-            }
-            _AWStatus.WindowTitlePBox.Location = new Point(430, _currentRow * 30);
-            Console.WriteLine("tmpV : " + tmpV);
-            //_AWParentStatus.ProcessPBox.CreateGraphics().Clear(_AWParentStatus.ProcessPBox.BackColor);
-            _AWStatus.WindowTitlePBox.Visible = true;
-            _AWStatus.WindowTitlePBox.Refresh();
-            _AWStatus.WindowTitlePBox.CreateGraphics()
-                .FillRectangle(new SolidBrush(m_PBarBackColor), 0, 0, tmpV, 30);
-            _AWStatus.WindowTitlePBox.CreateGraphics()
-                .DrawString(str, font, new SolidBrush(m_PBarForeColor), pt);
-            //_AWParentStatus.ProcessPBox.Refresh();
+            string text = tString + " : " + _awStatus.WindowTitleOrder + " : " + _awStatus.WindowTitleName;
+
+            _awStatus.WindowTitlePBox.Location = new Point(430, _currentRow * 30);
+            _awStatus.WindowTitlePBox.Visible = true;
+            _awStatus.WindowTitlePBox.SetBar(text, CalculateRatio(_awStatus.Seconds), m_PBarBackColor, m_PBarForeColor);
 
             _currentRow++;
             return _currentRow;
         }
 
+        private float CalculateRatio(int value)
+        {
+            double totalSeconds = m_TotalAWAccumulateTime.TotalSeconds;
+            if (totalSeconds <= 0)
+            {
+                return 0f;
+            }
+
+            float ratio = (float)(Math.Max(0, value) / totalSeconds);
+            return Math.Clamp(ratio, 0f, 1f);
+        }
         void ChangeFormColor() //改變視窗配色
         {
             Color tmpForeColor = Color.FromArgb(50, 50, 50);
@@ -686,22 +579,22 @@ namespace Flower_Pomodoro_Timer
             {
                 switch (m_BackColorMode)
                 {
-                    case eColor.DefaultTomato:
+                    case eColor.DefaultTomato://預設的番茄紅
                         //m_BackColorMode = eColor.Grass;
                         tmpBackColor = Color.Tomato;
                         tmpForeColor = Color.Brown;
                         break;
-                    case eColor.Grass:
+                    case eColor.Grass://草地綠
                         //m_BackColorMode = eColor.Sky;
                         tmpBackColor = Color.YellowGreen;
                         tmpForeColor = Color.DarkGreen;
                         break;
-                    case eColor.Sky:
+                    case eColor.Sky://天空藍
                         //m_BackColorMode = eColor.Gray;
                         tmpBackColor = Color.MediumTurquoise;
                         tmpForeColor = Color.SteelBlue;
                         break;
-                    case eColor.Gray:
+                    case eColor.Gray://灰色
                         //m_BackColorMode = eColor.DefaultTomato;
                         tmpBackColor = Color.DimGray;
                         tmpForeColor = Color.Black;
@@ -716,43 +609,32 @@ namespace Flower_Pomodoro_Timer
                 tmpForeColor = Color.SteelBlue;
             }
 
-            foreach (Control tempcon in this.Controls)
+            foreach (Control tempcon in this.Controls)//改變視窗內所有控制項的顏色
             {
-                switch (tempcon.GetType().ToString())
+                if (tempcon is Label)
                 {
-                    case "System.Windows.Forms.Label":
-                        tempcon.BackColor = tmpBackColor;
-                        if (tempcon.Name == "labelTimer" || tempcon.Name == "labelTotalTimer")
-                        {
-                            tempcon.ForeColor = Color.FromArgb(255, 224, 192);
-                        }
-                        else
-                        {
-                            tempcon.ForeColor = tmpForeColor;
-                        }
-                        break;
-                    case "System.Windows.Forms.Button":
-                        tempcon.BackColor = tmpBackColor;
+                    tempcon.BackColor = tmpBackColor;
+                    if (tempcon.Name == "labelTimer" || tempcon.Name == "labelTotalTimer")
+                    {
+                        tempcon.ForeColor = Color.FromArgb(255, 224, 192);
+                    }
+                    else
+                    {
                         tempcon.ForeColor = tmpForeColor;
-                        break;
-                    case "System.Windows.Forms.PictureBox":
-                        tempcon.BackColor = tmpBackColor;
-                        tempcon.ForeColor = tmpForeColor;
-                        break;
-                    case "System.Windows.Forms.Image":
-                        tempcon.BackColor = tmpBackColor;
-                        tempcon.ForeColor = tmpForeColor;
-                        break;
-                    default:
-                        break;
+                    }
+                }
+                else if (tempcon is Button || tempcon is PictureBox)//其他控制項如按鍵和橫條
+                {
+                    tempcon.BackColor = tmpBackColor;
+                    tempcon.ForeColor = tmpForeColor;
                 }
             }
             this.BackColor = tmpBackColor;
-
+            
             Color tmpBC = Color.FromArgb(
-                (int)((int)tmpBackColor.R * 1.1 - 40),
-                (int)((int)tmpBackColor.G * 1.1 - 40),
-                (int)((int)tmpBackColor.B * 1.1 - 40)
+                (int)MathF.Min(255,((int)tmpBackColor.R + 30))  ,
+                (int)MathF.Min(255,((int)tmpBackColor.G + 30)),
+                (int)MathF.Min(255, ((int)tmpBackColor.B + 30))
                 );
             m_PBarBackColor = tmpBC;
             Color tmpFC = tmpForeColor;
@@ -809,10 +691,13 @@ namespace Flower_Pomodoro_Timer
             }
         }
 
-        public void buttonPlus_Click(object sender, EventArgs e) //每一行工作資料的"+"按鍵
+                public void buttonPlus_Click(object? sender, EventArgs e) //每一行工作資料的"+"按鍵
         {
-            Button tmpbutton = (Button)sender;
-            AWParentStatus tmpAWP = (AWParentStatus)tmpbutton.Tag;
+            if (sender is not Button tmpbutton || tmpbutton.Tag is not AWParentStatus tmpAWP)
+            {
+                return;
+            }
+
             if (tmpAWP.ProcessPlusOr)
             {
                 tmpAWP.ProcessPlusButton.Image = imageListPlus.Images[1];
@@ -878,31 +763,10 @@ namespace Flower_Pomodoro_Timer
             ChangeFormColor();
         }
 
-        private void buttonHelp_Click(object sender, EventArgs e) //開啟說明視窗
+                private void buttonHelp_Click(object sender, EventArgs e) //開啟說明視窗
         {
-            //https://oblivious9.pixnet.net/blog/post/192683977
-
-            //if (m_FormHelp == null) //第一次會判定m_FormHelp == null，可是關閉m_FormHelp之後，卻無法判定為null，導致後續錯誤
-            //{
-            //    Console.WriteLine("m_FormHelp == null");
-            m_FormHelp = new formHelp();
-            //}
-            //m_FormHelp.Show(); //此方法讓formFlowerPomodoroTimer與m_FormHelp為可同時操作的平等級視窗，這方式不適合當成說明視窗
-            m_FormHelp.ShowDialog(this);//設定m_FormHelp為formFlowerPomodoroTimer的上層，並開啟m_FormHelp視窗。由於在formFlowerPomodoroTimer的程式碼內使用this，所以this為formFlowerPomodoroTimer的物件本身
-            if (m_FormHelp.DialogResult == System.Windows.Forms.DialogResult.OK)
-            {
-                //若使用者在Form2按下了OK，則進入這個判斷式
-                Console.WriteLine("按下了" + m_FormHelp.DialogResult.ToString());
-            }
-            else if (m_FormHelp.DialogResult == System.Windows.Forms.DialogResult.Cancel)
-            {
-                //若使用者在Form2按下了Cancel或者直接點選X關閉視窗，都會進入這個判斷式
-                Console.WriteLine("按下了" + m_FormHelp.DialogResult.ToString());
-            }
-            else
-            {
-                Console.WriteLine("按下了" + m_FormHelp.DialogResult.ToString());
-            }
+            using formHelp help = new formHelp();
+            help.ShowDialog(this);
         }
 
         private void buttonMinimumSize_Click(object sender, EventArgs e) //讓視窗縮到右下角
@@ -915,43 +779,41 @@ namespace Flower_Pomodoro_Timer
             }
             else
             {
-                /*
-                MinimumSize = new Size(360, 360);
-                MaximumSize = new Size(1360, 360);
-                this.Size = new System.Drawing.Size(360, 360);
-                System.Drawing.Rectangle workingRectangle = Screen.PrimaryScreen.WorkingArea;
-                Point newPosition = new Point(0, 0);
-                newPosition.X = workingRectangle.Width - MinimumSize.Width;
-                newPosition.Y = workingRectangle.Height - MinimumSize.Height;
-                this.Location = newPosition;
-                */
                 buttonMinimumSize.Text = "◤";
                 m_MinimumSizeOr = true;
                 SetFormSizeMini();
-
             }
         }
 
         private void buttonQuit_Click(object sender, EventArgs e) //離開
         {
             MinimumSize = new Size(MinimumSize.Width, 40);
-            //MaximumSize = new Size(1360, 720);
             int tmpHeight = this.Size.Height;
             for (int i = 0; i < (tmpHeight - 40) / 2; i++)
             {
-                this.Size = new System.Drawing.Size(this.Size.Width, tmpHeight - (i * 2));
-                //Thread.Sleep(1);
-                //this.Refresh();
+                this.Size = new Size(this.Size.Width, tmpHeight - (i * 2));
             }
             Application.Exit();
         }
 
         private void buttonTest_Click(object sender, EventArgs e) //測試按鍵用
         {
-            //ChangeWorkState(eWorkStates.Rest);
-            //progressBar1.ForeColor = Color.Red;
-            //SetProcessValue(progressBar1, "GGGGG", progressBar1.Value + 1);
+            // 保留作為手動測試入口。
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            m_TimerMain?.Stop();
+            m_TimerMain?.Dispose();
+            m_TimerActiveWindow?.Stop();
+            m_TimerActiveWindow?.Dispose();
+            base.OnFormClosing(e);
         }
         #endregion
     }
 }
+
+
+
+
+

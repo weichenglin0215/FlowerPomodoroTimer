@@ -1,76 +1,118 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Globalization;
+using System.IO;
+using System.Linq;
 
 namespace Flower_Pomodoro_Timer
 {
     public class WorkSchedule
     {
-        public DayOfWeek? Day { get; set; } // null 代表 everyday
+        public DayOfWeek? Day { get; set; }
         public TimeSpan Start { get; set; }
         public TimeSpan End { get; set; }
-        public string Task { get; set; }
-
+        public string Task { get; set; } = string.Empty;
+        // 其他属性或方法可以根据需要添加
         public List<WorkSchedule> LoadWorkSchedules(string filePath)
         {
+            EnsureDefaultFile(filePath);
+
             var schedules = new List<WorkSchedule>();
-            if (!File.Exists(filePath))
+            foreach (string rawLine in File.ReadLines(filePath))
             {
-                // 自動建立 WorkList.txt 並寫入預設內容
-                File.WriteAllText(filePath,
-                @"# 範例格式：星期,開始時間,結束時間,工作項目
-                # 例如：Monday,08:00,12:00,早上工作
-                # null 代表每天
-                null,09:00,12:00,上午工作
-                null,13:00,18:00,下午工作
-                ");
-            }
-            var lines = System.IO.File.ReadAllLines(filePath);
-
-            foreach (var line in lines)
-            {
-                if (string.IsNullOrWhiteSpace(line)) continue;
-                var parts = line.Split(' ');
-                if (parts.Length < 3) continue;
-
-                // 處理星期
-                DayOfWeek? day = null;
-                if (parts[0].ToLower() != "everyday")
+                string line = rawLine.Trim();
+                if (string.IsNullOrWhiteSpace(line) || line.StartsWith("#"))
                 {
-                    day = parts[0].ToLower() switch
-                    {
-                        "monday" => DayOfWeek.Monday,
-                        "tuesday" => DayOfWeek.Tuesday,
-                        "wednesday" => DayOfWeek.Wednesday,
-                        "thursday" => DayOfWeek.Thursday,
-                        "friday" => DayOfWeek.Friday,
-                        "saturday" => DayOfWeek.Saturday,
-                        "sunday" => DayOfWeek.Sunday,
-                        _ => null
-                    };
+                    continue;
                 }
 
-                // 處理時間
-                var timeRange = parts[1].Split('~');
-                if (timeRange.Length != 2) continue;
-                if (!TimeSpan.TryParseExact(timeRange[0], "hh\\:mm", CultureInfo.InvariantCulture, out var start)) continue;
-                if (!TimeSpan.TryParseExact(timeRange[1], "hh\\:mm", CultureInfo.InvariantCulture, out var end)) continue;
-
-                // 處理工作項目
-                var task = string.Join(" ", parts.Skip(2));
-
-                schedules.Add(new WorkSchedule
+                if (TryParseCsv(line, out WorkSchedule? schedule) && schedule is not null)
                 {
-                    Day = day,
-                    Start = start,
-                    End = end,
-                    Task = task
-                });
+                    schedules.Add(schedule);
+                }
             }
+
             return schedules;
+        }
+        // CSV格式: Day,Start,End,Task
+        private static bool TryParseCsv(string line, out WorkSchedule? schedule)
+        {
+            schedule = null;
+
+            string[] parts = line.Split(',', 4, StringSplitOptions.TrimEntries);
+            if (parts.Length < 4)
+            {
+                return false;
+            }
+
+            if (!TryParseDay(parts[0], out DayOfWeek? day))
+            {
+                return false;
+            }
+
+            if (!TimeSpan.TryParseExact(parts[1], @"hh\:mm", CultureInfo.InvariantCulture, out TimeSpan start))
+            {
+                return false;
+            }
+
+            if (!TimeSpan.TryParseExact(parts[2], @"hh\:mm", CultureInfo.InvariantCulture, out TimeSpan end))
+            {
+                return false;
+            }
+
+            if (end <= start)
+            {
+                return false;
+            }
+
+            schedule = new WorkSchedule
+            {
+                Day = day,
+                Start = start,
+                End = end,
+                Task = parts[3]
+            };
+
+            return true;
+        }
+        // 解析Day字段，支持null（每天）和Monday..Sunday
+        private static bool TryParseDay(string input, out DayOfWeek? day)
+        {
+            string token = input.Trim();
+            if (token.Equals("null", StringComparison.OrdinalIgnoreCase)
+                || token.Equals("everyday", StringComparison.OrdinalIgnoreCase))
+            {
+                day = null;
+                return true;
+            }
+
+            if (Enum.TryParse(token, true, out DayOfWeek parsed))
+            {
+                day = parsed;
+                return true;
+            }
+
+            day = null;
+            return false;
+        }
+        // 如果文件不存在，创建一个默认的工作计划文件
+        private static void EnsureDefaultFile(string filePath)
+        {
+            if (File.Exists(filePath))
+            {
+                return;
+            }
+
+            string[] defaultLines =
+            {
+                "# 格式: Day,Start,End,Task",
+                "# Day 可用 Monday..Sunday 或 null (每天)",
+                "null,09:00,12:00,上午工作",
+                "null,13:00,18:00,下午工作"
+            };
+
+            Directory.CreateDirectory(Path.GetDirectoryName(filePath) ?? AppContext.BaseDirectory);
+            File.WriteAllLines(filePath, defaultLines);
         }
     }
 }
