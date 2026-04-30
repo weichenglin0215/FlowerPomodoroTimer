@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -103,6 +103,39 @@ namespace Flower_Pomodoro_Timer
         eColor m_BackColorMode;
         Color m_PBarBackColor = Color.Tomato;
         Color m_PBarForeColor = Color.Brown;
+
+        #region 效能監測變數
+        BarChartBox m_BarCPU = new BarChartBox();
+        BarChartBox m_BarRAM = new BarChartBox();
+        BarChartBox m_BarDisk = new BarChartBox();
+        BarChartBox m_BarGPU = new BarChartBox();
+        BarChartBox m_BarVRAM = new BarChartBox();
+
+        PerformanceCounter? m_CpuCounter;
+        PerformanceCounter? m_DiskReadCounter;
+        PerformanceCounter? m_DiskWriteCounter;
+        List<PerformanceCounter> m_GpuUsageCounters = new List<PerformanceCounter>();
+        List<PerformanceCounter> m_VramUsageCounters = new List<PerformanceCounter>();
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+        private class MEMORYSTATUSEX
+        {
+            public uint dwLength;
+            public uint dwMemoryLoad;
+            public ulong ullTotalPhys;
+            public ulong ullAvailPhys;
+            public ulong ullTotalPageFile;
+            public ulong ullAvailPageFile;
+            public ulong ullTotalVirtual;
+            public ulong ullAvailVirtual;
+            public ulong ullAvailExtendedVirtual;
+            public MEMORYSTATUSEX() => dwLength = (uint)Marshal.SizeOf(typeof(MEMORYSTATUSEX));
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GlobalMemoryStatusEx([In, Out] MEMORYSTATUSEX lpBuffer);
+        #endregion
         #endregion
 
         #region 取得最上層視窗資訊
@@ -132,6 +165,7 @@ namespace Flower_Pomodoro_Timer
             InitializeMainTimer();
             InitializeActiveWindowTimer();
             SetFormSizeNormal();
+            InitializePerformanceMonitoring();
             ChangeFormColor();
             m_TopMost = TopMost;
         }
@@ -156,18 +190,29 @@ namespace Flower_Pomodoro_Timer
             newPosition.Y = (workingRectangle.Height - this.Height) / 2;
             this.Location = newPosition;
 
-            labelTimer.Size = new Size(310, 127);
-            labelTimer.Font = new Font(labelTimer.Font.FontFamily, 90, labelTimer.Font.Style);
-            labelTimer.Location = new Point(20, 25);
+            labelTimer.Size = new Size(310, 70);
+            labelTimer.Font = new Font(labelTimer.Font.FontFamily, 50, labelTimer.Font.Style);
+            labelTimer.Location = new Point(20, 5);
 
             buttonStart.Size = new Size(88, 40);
             buttonStart.Font = new Font(buttonStart.Font.FontFamily, 22, buttonStart.Font.Style);
-            buttonStart.Location = new Point(125, 165);
+            buttonStart.Location = new Point(125, 80);
             buttonStart_SizeChanged(this, EventArgs.Empty);
 
-            labelTotalTimer.Size = new Size(310, 95);
-            labelTotalTimer.Font = new Font(labelTimer.Font.FontFamily, 60, labelTimer.Font.Style);
-            labelTotalTimer.Location = new Point(20, 220);
+            labelTotalTimer.Size = new Size(310, 46);
+            labelTotalTimer.Font = new Font(labelTimer.Font.FontFamily, 30, labelTimer.Font.Style);
+            labelTotalTimer.Location = new Point(20, 124);
+
+            int barY = 180;
+            int barWidth = 310;
+            int barHeight = 25;
+            int spacing = 3;
+
+            m_BarCPU.Bounds = new Rectangle(20, barY, barWidth, barHeight); barY += barHeight + spacing;
+            m_BarRAM.Bounds = new Rectangle(20, barY, barWidth, barHeight); barY += barHeight + spacing;
+            m_BarDisk.Bounds = new Rectangle(20, barY, barWidth, barHeight); barY += barHeight + spacing;
+            m_BarGPU.Bounds = new Rectangle(20, barY, barWidth, barHeight); barY += barHeight + spacing;
+            m_BarVRAM.Bounds = new Rectangle(20, barY, barWidth, barHeight);
         }
         //縮小視窗到右下角，僅顯示主要計時器和總計時器
         private void SetFormSizeMini()
@@ -190,18 +235,36 @@ namespace Flower_Pomodoro_Timer
             newPosition.Y = workingRectangle.Height - MinimumSize.Height;
             this.Location = newPosition;
 
-            labelTimer.Size = new Size(155, 64);
-            labelTimer.Font = new Font(labelTimer.Font.FontFamily, 45, labelTimer.Font.Style);
+            labelTimer.Size = new Size(155, 60);
+            labelTimer.Font = new Font(labelTimer.Font.FontFamily, 40, labelTimer.Font.Style);
             labelTimer.Location = new Point(12, 25);
 
-            buttonStart.Size = new Size(44, 24);
+            buttonStart.Size = new Size(44, 20);
             buttonStart.Font = new Font(buttonStart.Font.FontFamily, 12, buttonStart.Font.Style);
-            buttonStart.Location = new Point(60, 90);
+            buttonStart.Location = new Point(60, 85);
             buttonStart_SizeChanged(this, EventArgs.Empty);
 
             labelTotalTimer.Size = new Size(140, 40);
             labelTotalTimer.Font = new Font(labelTimer.Font.FontFamily, 24, labelTimer.Font.Style);
-            labelTotalTimer.Location = new Point(20, 120);
+            labelTotalTimer.Location = new Point(20, 115);
+
+            int barY = 160;
+            int barWidth = 160;
+            int barHeight = 16;
+            int spacing = 3;
+
+            m_BarCPU.Bounds = new Rectangle(10, barY, barWidth, barHeight); barY += barHeight + spacing;
+            m_BarRAM.Bounds = new Rectangle(10, barY, barWidth, barHeight); barY += barHeight + spacing;
+            m_BarDisk.Bounds = new Rectangle(10, barY, barWidth, barHeight); barY += barHeight + spacing;
+            m_BarGPU.Bounds = new Rectangle(10, barY, barWidth, barHeight); barY += barHeight + spacing;
+            m_BarVRAM.Bounds = new Rectangle(10, barY, barWidth, barHeight);
+
+            // Increase window height to accommodate the bars
+            this.Height = barY + barHeight + 10;
+            MinimumSize = new Size(180, this.Height);
+            
+            // Adjust position to stay at the bottom right
+            this.Location = new Point(workingRectangle.Width - this.Width, workingRectangle.Height - this.Height);
         }
         public void InitializeFirstBar() //初始化第一條橫條，顯示離開時間
         {
@@ -236,8 +299,104 @@ namespace Flower_Pomodoro_Timer
             LastWindow = IntPtr.Zero;
         }
 
+        private void InitializePerformanceMonitoring()
+        {
+            try
+            {
+                m_CpuCounter = new PerformanceCounter("Processor", "% Processor Time", "_Total");
+                m_DiskReadCounter = new PerformanceCounter("PhysicalDisk", "Disk Read Bytes/sec", "_Total");
+                m_DiskWriteCounter = new PerformanceCounter("PhysicalDisk", "Disk Write Bytes/sec", "_Total");
+                RefreshGpuCounters();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("效能監測初始化失敗: " + ex.Message);
+            }
+
+            m_BarCPU.BorderStyle = BorderStyle.None;
+            m_BarRAM.BorderStyle = BorderStyle.None;
+            m_BarDisk.BorderStyle = BorderStyle.None;
+            m_BarGPU.BorderStyle = BorderStyle.None;
+            m_BarVRAM.BorderStyle = BorderStyle.None;
+            Controls.Add(m_BarCPU);
+            Controls.Add(m_BarRAM);
+            Controls.Add(m_BarDisk);
+            Controls.Add(m_BarGPU);
+            Controls.Add(m_BarVRAM);
+        }
+
+        private void RefreshGpuCounters()
+        {
+            try
+            {
+                var category = new PerformanceCounterCategory("GPU Engine");
+                var names = category.GetInstanceNames();
+                m_GpuUsageCounters.Clear();
+                foreach (var name in names)
+                {
+                    if (name.Contains("engtype_3D", StringComparison.OrdinalIgnoreCase))
+                    {
+                        m_GpuUsageCounters.Add(new PerformanceCounter("GPU Engine", "Utilization Percentage", name));
+                    }
+                }
+
+                var vramCategory = new PerformanceCounterCategory("GPU Adapter Memory");
+                var vramNames = vramCategory.GetInstanceNames();
+                m_VramUsageCounters.Clear();
+                foreach (var name in vramNames)
+                {
+                    m_VramUsageCounters.Add(new PerformanceCounter("GPU Adapter Memory", "Dedicated Usage", name));
+                }
+            }
+            catch { }
+        }
+
+        private void UpdatePerformanceInfo()
+        {
+            // 1. CPU
+            float cpuVal = 0;
+            try { cpuVal = m_CpuCounter?.NextValue() ?? 0; } catch { }
+            m_BarCPU.SetBar($"CPU: {cpuVal:F1}%", cpuVal / 100f, Color.LimeGreen, Color.White);
+
+            // 2. RAM
+            var memStatus = new MEMORYSTATUSEX();
+            if (GlobalMemoryStatusEx(memStatus))
+            {
+                double totalGB = memStatus.ullTotalPhys / 1024.0 / 1024.0 / 1024.0;
+                double usedGB = (memStatus.ullTotalPhys - memStatus.ullAvailPhys) / 1024.0 / 1024.0 / 1024.0;
+                float ramPercent = memStatus.dwMemoryLoad;
+                m_BarRAM.SetBar($"RAM: {usedGB:F1}/{totalGB:F1} GB ({ramPercent}%)", ramPercent / 100f, Color.DeepSkyBlue, Color.White);
+            }
+
+            // 3. Disk
+            float rVal = 0, wVal = 0;
+            try { rVal = m_DiskReadCounter?.NextValue() ?? 0; wVal = m_DiskWriteCounter?.NextValue() ?? 0; } catch { }
+            float rMB = rVal / 1024f / 1024f;
+            float wMB = wVal / 1024f / 1024f;
+            m_BarDisk.SetBar($"Disk: R:{rMB:F1} W:{wMB:F1} MB/s", Math.Clamp((rMB + wMB) / 100f, 0, 1), Color.Orange, Color.White);
+
+            // 4. GPU
+            float gpuVal = 0;
+            foreach (var counter in m_GpuUsageCounters)
+            {
+                try { gpuVal += counter.NextValue(); } catch { }
+            }
+            m_BarGPU.SetBar($"GPU: {gpuVal:F1}%", Math.Clamp(gpuVal / 100f, 0, 1), Color.MediumPurple, Color.White);
+
+            // 5. VRAM
+            float vramVal = 0;
+            foreach (var counter in m_VramUsageCounters)
+            {
+                try { vramVal += counter.NextValue(); } catch { }
+            }
+            float vramMB = vramVal / 1024f / 1024f;
+            // VRAM Ratio fallback to 8GB if total unknown
+            m_BarVRAM.SetBar($"VRAM: {vramMB:F0} MB", Math.Clamp(vramMB / 8192f, 0, 1), Color.HotPink, Color.White);
+        }
+
         private void TimerMain_Tick(object? Sender, EventArgs e) //顯示整體秒數並決定是否切換狀態 Work或Rest
         {
+            UpdatePerformanceInfo();
             TimeSpan tmpTime = m_PhaseAccumulateTime + DateTime.Now.Subtract(m_NewPhaseStartTime);
             labelTimer.Text = tmpTime.ToString(@"mm\:ss");
 
@@ -625,6 +784,11 @@ namespace Flower_Pomodoro_Timer
                 }
                 else if (tempcon is Button || tempcon is PictureBox)//其他控制項如按鍵和橫條
                 {
+                    if (tempcon == m_BarCPU || tempcon == m_BarRAM || tempcon == m_BarDisk || tempcon == m_BarGPU || tempcon == m_BarVRAM)
+                    {
+                        tempcon.BackColor = Color.FromArgb((int)(tmpBackColor.R * 0.8), (int)(tmpBackColor.G * 0.8), (int)(tmpBackColor.B * 0.8));
+                        continue;
+                    }
                     tempcon.BackColor = tmpBackColor;
                     tempcon.ForeColor = tmpForeColor;
                 }

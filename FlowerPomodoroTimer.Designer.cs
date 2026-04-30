@@ -48,12 +48,12 @@
             // 
             // labelTimer
             // 
-            labelTimer.Font = new Font("Arial Narrow", 90F);
+            labelTimer.Font = new Font("Arial Narrow", 50.25F, FontStyle.Regular, GraphicsUnit.Point, 0);
             labelTimer.ForeColor = Color.FromArgb(255, 224, 192);
             labelTimer.ImageKey = "(無)";
-            labelTimer.Location = new Point(20, 25);
+            labelTimer.Location = new Point(20, 5);
             labelTimer.Name = "labelTimer";
-            labelTimer.Size = new Size(310, 127);
+            labelTimer.Size = new Size(310, 70);
             labelTimer.TabIndex = 0;
             labelTimer.Text = "00:00";
             labelTimer.TextAlign = ContentAlignment.BottomCenter;
@@ -66,7 +66,7 @@
             buttonStart.FlatStyle = FlatStyle.Flat;
             buttonStart.Font = new Font("Arial", 21.75F, FontStyle.Regular, GraphicsUnit.Point, 0);
             buttonStart.ForeColor = Color.Brown;
-            buttonStart.Location = new Point(125, 165);
+            buttonStart.Location = new Point(127, 80);
             buttonStart.MaximumSize = new Size(200, 40);
             buttonStart.Name = "buttonStart";
             buttonStart.Size = new Size(88, 40);
@@ -89,12 +89,12 @@
             // 
             // labelTotalTimer
             // 
-            labelTotalTimer.Font = new Font("Arial Narrow", 60F);
+            labelTotalTimer.Font = new Font("Arial Narrow", 30F);
             labelTotalTimer.ForeColor = Color.FromArgb(255, 224, 192);
             labelTotalTimer.ImageKey = "(無)";
-            labelTotalTimer.Location = new Point(20, 220);
+            labelTotalTimer.Location = new Point(20, 124);
             labelTotalTimer.Name = "labelTotalTimer";
-            labelTotalTimer.Size = new Size(310, 95);
+            labelTotalTimer.Size = new Size(310, 46);
             labelTotalTimer.TabIndex = 3;
             labelTotalTimer.Text = "00:00:00";
             labelTotalTimer.TextAlign = ContentAlignment.BottomCenter;
@@ -251,7 +251,7 @@
             Margin = new Padding(4);
             Name = "formFlowerPomodoroTimer";
             StartPosition = FormStartPosition.CenterScreen;
-            Text = "Flower Pomodoro Timer Ver 0.7.0.0   珍惜自己的一分一秒...直到你我相遇...";
+            Text = "Flower Pomodoro Timer Ver 0.8.0.0   珍惜自己的一分一秒...";
             ResumeLayout(false);
             PerformLayout();
 
