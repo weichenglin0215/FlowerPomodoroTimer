@@ -251,7 +251,7 @@
             Margin = new Padding(4);
             Name = "formFlowerPomodoroTimer";
             StartPosition = FormStartPosition.CenterScreen;
-            Text = "Flower Pomodoro Timer Ver 0.8.0.0   珍惜自己的一分一秒...";
+            Text = "Flower Pomodoro Timer Ver 0.9.0.0   珍惜自己的一分一秒...";
             ResumeLayout(false);
             PerformLayout();
 
