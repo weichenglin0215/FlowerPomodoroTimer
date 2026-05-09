@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
-VisualStudioVersion = 18.2.11415.280 d18.0
+VisualStudioVersion = 18.2.11415.280
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlowerPomodoroTimer", "FlowerPomodoroTimer.csproj", "{79F26F09-18F4-4F5A-98F0-5FB1E962EB83}"
 EndProject
@@ -13,8 +13,8 @@ Global
 		Release|x64 = Release|x64
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{79F26F09-18F4-4F5A-98F0-5FB1E962EB83}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{79F26F09-18F4-4F5A-98F0-5FB1E962EB83}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{79F26F09-18F4-4F5A-98F0-5FB1E962EB83}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{79F26F09-18F4-4F5A-98F0-5FB1E962EB83}.Debug|Any CPU.Build.0 = Debug|x64
 		{79F26F09-18F4-4F5A-98F0-5FB1E962EB83}.Debug|x64.ActiveCfg = Debug|x64
 		{79F26F09-18F4-4F5A-98F0-5FB1E962EB83}.Debug|x64.Build.0 = Debug|x64
 		{79F26F09-18F4-4F5A-98F0-5FB1E962EB83}.Release|Any CPU.ActiveCfg = Release|Any CPU

@@ -21,6 +21,8 @@ namespace Flower_Pomodoro_Timer
         public formHelp()
         {
             InitializeComponent();
+            this.AutoScaleMode = AutoScaleMode.Dpi;  // 改這行
+            // 預設是 AutoScaleMode.Font，有時會造成元件重疊
             buttonOK.DialogResult = DialogResult.OK;
             InitializeRestImageControls();
             LoadRestImageSettingsToUi();

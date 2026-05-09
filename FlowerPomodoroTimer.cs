@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -15,49 +15,49 @@ using System.Text.Json;
 using Microsoft.Win32;
 
 /*
- * 2026-03-19 ?湔隤芣?嚗?
- * 雿輻 OpenAI Codex?芸?蝔?蝣潛?瑽?憓?閮餉圾隤芣?嚗耨甇??鈭??函?????
+ * 2026-03-19 更新說明：
+ * 使用 OpenAI Codex優化程式碼結構，增加註解說明，修正一些潛在的問題。
  */
 
 /*
- * 2021-04-06 憭扳??
- * ?喳璈急??寞???撅歹??園?撅孑_AWParentStatus蝝??蝒??蝔??迂
- * ?批摮?撅刀yAWStatus嚗???蝒????迂
- * 隞乩噶?潸?雿輻?????函?撘?蝮賭蝙?冽???
- * 銋?m_AWParentStatus?批璈急??ictureBox嚗誑靘踵?批嚗??嗉?皞蝙?刻?憭?(?????臬?雿輻20?ictureBox靘?20?憚瘚蝙??
+ * 2021-04-06 大改版
+ * 右側橫條改成有階層，父階層m_AWParentStatus紀錄視窗的應用程式名稱
+ * 內含子階層MyAWStatus，紀錄視窗的分頁名稱
+ * 以便於讓使用者知悉哪個應用程式的總使用時間
+ * 也讓m_AWParentStatus內含橫條的PictureBox，以便於控制，雖然資源使用較多，(原來做法是僅使用20個PictureBox供前20名輪流使用)
  * 
- * 雿輻?拙?? m_TimerMain 蝮賭蝙?冽???m_TimerActiveWindow ??潸?蝒◤雿輻??
- * ?抵榆?唬噶?狸indow?脣???恍嚗?撠望?拙振銝摨找???嚗?敺身摰犖??>???恍(銝?????
+ * 使用兩個計時器 m_TimerMain 總使用時間，m_TimerActiveWindow 僅用於視窗被使用時，
+ * 兩者差異便是Window進入鎖定畫面，也就是玩家不在座位時間，記得設定個人化->鎖定畫面(三分鐘)。
    InitializeMainTimer();
    InitializeActiveWindowTimer();
- * m_TimerMain m_TimerMain_Tick()瘥?/10蝘?蝞?甈∴??游?憿舐內蝘??
- * m_TimerActiveWindow timerActiveWindow_Tick()瘥?蝘?蝞?甈∴?
-   ?澆CalAWParentSec()蝯梯??啁?Active閬??歇??Active閬?雿輻蝘??
-   ?澆SortAWParentStatus()?寞?雿輻蝘靘?摨?銝剝?俟ortAWStatus()??摮?撅?
-   ?澆ShowAWParentStatusBars()憿舐內BAR璇?
+ * m_TimerMain m_TimerMain_Tick()每1/10秒計算一次，更動顯示秒數。
+ * m_TimerActiveWindow timerActiveWindow_Tick()每一秒計算一次，
+   呼叫CalAWParentSec()統計新的Active視窗或已有的Active視窗使用秒數。
+   呼叫SortAWParentStatus()根據使用秒數來排序，中途呼叫SortAWStatus()排序子階層
+   呼叫ShowAWParentStatusBars()顯示BAR條
  */
 namespace Flower_Pomodoro_Timer
 {
     
     public partial class formFlowerPomodoroTimer : Form
     {
-        #region 霈
+        #region 變數
         readonly WorkSchedule m_ScheduleService = new WorkSchedule();
         List<WorkSchedule> workSchedules = new List<WorkSchedule>();
 
-        BarChartBox m_FirstBar = new BarChartBox(); //蝚砌?璇AR
-        System.Windows.Forms.Timer m_TimerMain = null!; //?湧???雿輻?瘜?閮?????Work?est???
-        System.Windows.Forms.Timer m_TimerActiveWindow = null!; //閬?雿輻?瘜?閮???
+        BarChartBox m_FirstBar = new BarChartBox(); //第一條BAR
+        System.Windows.Forms.Timer m_TimerMain = null!; //主要計時器，使用情況統計，切換Work或Rest狀態
+        System.Windows.Forms.Timer m_TimerActiveWindow = null!; //視窗使用情況統計計時器
 
-        DateTime m_FirstStartTime; //蝚砌?甈∟絲憪???
-        DateTime m_NewStartTime; //???怠?銋??銝甈∟絲憪???
-        TimeSpan m_TotalAccumulateTime; //蝝臬?瘥活???單??????嚗???蝯梯?????怠????蜇?? DateTime.Now.Subtract(m_NewStartTime)+m_TotalAccumulateTime
-        TimeSpan m_TotalAWAccumulateTime; //蝝臬??ctive Window??????Ｗ?靽風蝔?????
-        DateTime m_PhaseStartTime; //?挾?扯絲憪???瘥?5??撌乩?????隡?賜迂?箔???畾?
-        DateTime m_NewPhaseStartTime; //???怠?銋??銝甈∟絲憪???
-        TimeSpan m_PhaseAccumulateTime; //瘥?畾萇?蝝臬?蝘嚗???蝯梯?????怠????蜇?? m_NewPhaseStartTime-NOW+m_PhaseAccumulateTime
+        DateTime m_FirstStartTime; //第一次起始時間
+        DateTime m_NewStartTime; //暫停後之重新開始新一次起始時間
+        TimeSpan m_TotalAccumulateTime; //累計每次開始暫停的時間，用於系統統計總時間，最後系統時間為 DateTime.Now.Subtract(m_NewStartTime)+m_TotalAccumulateTime
+        TimeSpan m_TotalAWAccumulateTime; //累計 Active Window 使用時間，扣除螢幕保護程式時間
+        DateTime m_PhaseStartTime; //階段性起始時間（如55分鐘工作或5分鐘休息）
+        DateTime m_NewPhaseStartTime; //暫停後之重新開始新一次起始時間
+        TimeSpan m_PhaseAccumulateTime; //每階段累計秒數，用於系統統計總時間，最後系統統計為 m_NewPhaseStartTime-NOW+m_PhaseAccumulateTime
 
-        bool m_MinimumSizeOr = false; //閬??臬?撠?
+        bool m_MinimumSizeOr = false; //視窗是否最小化
 
         enum eWorkStates
         {
@@ -68,25 +68,25 @@ namespace Flower_Pomodoro_Timer
         eWorkStates m_WorkStates;
         bool m_TopMost;
 
-        public class AWParentStatus //?寧class?臬??箇struct?◤??⊥??湔??List struct?折??潘???????truct P嚗?摰??⊥?澆?嚗?霈ist struct[0]=P
+        public class AWParentStatus //使用 class 而非 struct，因為 List 內的 struct 成員值無法直接修改。如果用 struct P，給定值數值後，須讓List struct[0]=P
         {
-            public int Seconds; //雿輻蝘
-            public string ProcessName = string.Empty; //蝔??迂嚗hrome?E
-            public int ProcessOrder; //靘蝙?函??訾???嚗策TreeView?園?撅斤
-            public Button ProcessPlusButton = new Button(); //+????
+            public int Seconds; //使用秒數
+            public string ProcessName = string.Empty; //程式名稱：Chrome 或 IE
+            public int ProcessOrder; //依使用時間排序，給 TreeView 上層用
+            public Button ProcessPlusButton = new Button(); //展開按鈕
             public bool ProcessPlusOr = true;
             public BarChartBox ProcessPBox = new BarChartBox();
             public List<AWStatus> MyAWStatus = new List<AWStatus>();
             public Dictionary<string, AWStatus> WindowTitleMap = new Dictionary<string, AWStatus>(StringComparer.Ordinal);
         }
-        List<AWParentStatus> m_AWParentStatus = new List<AWParentStatus>(); //??圈???雿?
+        List<AWParentStatus> m_AWParentStatus = new List<AWParentStatus>(); //存放所有上層視窗資訊
         readonly Dictionary<string, AWParentStatus> m_AWParentByProcess = new Dictionary<string, AWParentStatus>(StringComparer.OrdinalIgnoreCase);
-        public class AWStatus //?寧class?臬??箇struct?◤??⊥??湔??List struct?折??潘???????truct P嚗?摰??⊥?澆?嚗?霈ist struct[0]=P
+        public class AWStatus //使用 class 而非 struct，因為 List 內的 struct 成員值無法直接修改。如果用 struct P，給定值數值後，須讓List struct[0]=P
         {
-            public int Seconds; //雿輻蝘
-            public string ProcessName = string.Empty; //蝔??迂嚗hrome?E
-            public string WindowTitleName = string.Empty; //閬????迂嚗acebook...
-            public int WindowTitleOrder; //靘蝙?函??訾???嚗策TreeView摮?撅斤
+            public int Seconds; //使用秒數
+            public string ProcessName = string.Empty; //程式名稱：Chrome 或 IE
+            public string WindowTitleName = string.Empty; //視窗名稱：Facebook...
+            public int WindowTitleOrder; //依使用時間排序，給 TreeView 子層用
             public BarChartBox WindowTitlePBox = new BarChartBox();
         }
         string m_LastAWParentFullName = "";
@@ -106,7 +106,7 @@ namespace Flower_Pomodoro_Timer
         Color m_PBarBackColor = Color.Tomato;
         Color m_PBarForeColor = Color.Brown;
 
-        #region ???葫霈
+        #region 效能監控變數
         BarChartBox m_BarCPU = new BarChartBox();
         BarChartBox m_BarRAM = new BarChartBox();
         BarChartBox m_BarDisk = new BarChartBox();
@@ -178,8 +178,8 @@ namespace Flower_Pomodoro_Timer
         #endregion
         #endregion
 
-        #region ???銝惜閬?鞈?
-        //???銝惜閬?鞈?嚗靘絞閮蝙?刻銵?蝔桃?撘????詻?
+        #region 取得上層視窗資訊
+        // 取得上層視窗資訊，用來統計使用者執行哪種程式的時間
         //http://codingjames.blogspot.com/2010/09/cforegroundwindow.html
         [DllImport("user32.dll")]
         static extern IntPtr GetForegroundWindow();
@@ -189,18 +189,20 @@ namespace Flower_Pomodoro_Timer
 
         //https://ithelp.ithome.com.tw/articles/10198779
         [DllImport("user32.dll")]
-        static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count);//??蝒itle
+        static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count);//取得視窗標題
 
         IntPtr LastWindow { get; set; }
         #endregion
 
 
-        // ??formFlowerPomodoroTimer 撱箸?摮葉嚗ist<WorkSchedule> workSchedules ??????脣?瑼Ｘ
+        // 在 formFlowerPomodoroTimer 建構子中，將工作排程載入檢查
         public formFlowerPomodoroTimer()
         {
             string workListPath = Path.Combine(AppContext.BaseDirectory, "WorkList.txt");
-            workSchedules = m_ScheduleService.LoadWorkSchedules(workListPath); //霈?極雿???
+            workSchedules = m_ScheduleService.LoadWorkSchedules(workListPath); //讀取工作排程
             InitializeComponent();
+            this.AutoScaleMode = AutoScaleMode.Dpi;  // 改這行
+            // 預設是 AutoScaleMode.Font，有時會造成元件重疊
             InitializeFirstBar();
             InitializeMainTimer();
             InitializeActiveWindowTimer();
@@ -209,7 +211,7 @@ namespace Flower_Pomodoro_Timer
             ChangeFormColor();
             m_TopMost = TopMost;
         }
-        // 閮剖?閬?撠箏站?箸迤撣詨之撠?
+        // 設定視窗尺寸為正常大小
         private void SetFormSizeNormal()
         {
             this.FormBorderStyle = FormBorderStyle.Sizable;
@@ -254,7 +256,7 @@ namespace Flower_Pomodoro_Timer
             m_BarGPU.Bounds = new Rectangle(20, barY, barWidth, barHeight); barY += barHeight + spacing;
             m_BarVRAM.Bounds = new Rectangle(20, barY, barWidth, barHeight);
         }
-        //蝮桀?閬??啣銝?嚗?憿舐內銝餉?閮??典?蝮質??
+        // 縮小視窗至右下角，僅顯示主要計時器及總計時器
         private void SetFormSizeMini()
         {
             this.FormBorderStyle = FormBorderStyle.None;
@@ -306,7 +308,7 @@ namespace Flower_Pomodoro_Timer
             // Adjust position to stay at the bottom right
             this.Location = new Point(workingRectangle.Width - this.Width, workingRectangle.Height - this.Height);
         }
-        public void InitializeFirstBar() //???洵銝璇帖璇?憿舐內?ａ???
+        public void InitializeFirstBar() //初始化第一條橫條，顯示空閒時間
         {
             Controls.Add(m_FirstBar);
             m_FirstBar.Location = new Point(360, 0);
@@ -314,7 +316,7 @@ namespace Flower_Pomodoro_Timer
             m_FirstBar.ForeColor = Color.DodgerBlue;
         }
 
-        private void InitializeMainTimer() //???蜓閬??
+        private void InitializeMainTimer() //初始化主要計時器
         {
             // Call this procedure when the application starts.  
             // Set to 1 second.  
@@ -323,7 +325,7 @@ namespace Flower_Pomodoro_Timer
             m_TimerMain.Tick += new EventHandler(TimerMain_Tick);
 
             // Enable timer.  
-            m_FirstStartTime = DateTime.MinValue; //蝑蝚砌?甈⊥?銝tart??閮剖??????
+            m_FirstStartTime = DateTime.MinValue; //等到第一次按下 Start 時再設定目標時間
             m_TotalAccumulateTime = TimeSpan.Zero;
             m_TotalAWAccumulateTime = TimeSpan.Zero;
             m_PhaseAccumulateTime = TimeSpan.Zero;
@@ -331,7 +333,7 @@ namespace Flower_Pomodoro_Timer
             m_WorkStates = eWorkStates.WORK;
         }
 
-        private void InitializeActiveWindowTimer() //閬?雿輻?瘜?閮???
+        private void InitializeActiveWindowTimer() //視窗使用情況統計計時器
         {
             m_TimerActiveWindow = new System.Windows.Forms.Timer();
             m_TimerActiveWindow.Interval = 1000;
@@ -351,7 +353,7 @@ namespace Flower_Pomodoro_Timer
             }
             catch (Exception ex)
             {
-                Debug.WriteLine("???葫???仃?? " + ex.Message);
+                Debug.WriteLine("效能監控初始化失敗: " + ex.Message);
             }
 
             m_BarCPU.BorderStyle = BorderStyle.None;
@@ -512,7 +514,7 @@ namespace Flower_Pomodoro_Timer
             bool sharedAvailable = sharedVramLimit > 0;
             const float usageSwitchThresholdBytes = 1f * 1024f * 1024f; // 1 MB
 
-            string vramMode = "撠惇GPU";
+            string vramMode = "專屬GPU";
             bool dedicatedHasUsage = vramVal > usageSwitchThresholdBytes;
             bool sharedHasUsage = sharedVramVal > usageSwitchThresholdBytes;
 
@@ -521,13 +523,13 @@ namespace Flower_Pomodoro_Timer
             {
                 vramVal = sharedVramVal;
                 vramLimit = sharedVramLimit;
-                vramMode = "?曹澈";
+                vramMode = "共享";
             }
             else if (!dedicatedAvailable && sharedAvailable)
             {
                 vramVal = sharedVramVal;
                 vramLimit = sharedVramLimit;
-                vramMode = "?曹澈";
+                vramMode = "共享";
             }
 
             float vramUsedGB = vramVal / 1024f / 1024f / 1024f;
@@ -789,7 +791,7 @@ namespace Flower_Pomodoro_Timer
                 base.Dispose(disposing);
             }
         }
-        private void TimerMain_Tick(object? Sender, EventArgs e) //憿舐內?湧?蝘銝行捱摰?血?????Work?est
+        private void TimerMain_Tick(object? Sender, EventArgs e) //顯示計時秒數並決定是否切換工作或休息狀態 (Work 或 Rest)
         {
             UpdatePerformanceInfo();
             TimeSpan tmpTime = m_PhaseAccumulateTime + DateTime.Now.Subtract(m_NewPhaseStartTime);
@@ -826,16 +828,16 @@ namespace Flower_Pomodoro_Timer
             if (TopMost)
             {
                 buttonAlwaysTop.Text = "PIN";
-                toolTipAll.SetToolTip(buttonAlwaysTop, "???銝惜憿舐內");
+                toolTipAll.SetToolTip(buttonAlwaysTop, "切換最上層顯示");
             }
             else
             {
                 buttonAlwaysTop.Text = "UNPIN";
-                toolTipAll.SetToolTip(buttonAlwaysTop, "???銝惜憿舐內");
+                toolTipAll.SetToolTip(buttonAlwaysTop, "切換最上層顯示");
             }
         }
 
-        private void TimerActiveWindow_Tick(object? sender, EventArgs e) //?菜葫?桀??臬銝??蝒撌乩?
+        private void TimerActiveWindow_Tick(object? sender, EventArgs e) //偵測目前哪一個視窗在工作
         {
             try
             {
@@ -874,11 +876,11 @@ namespace Flower_Pomodoro_Timer
             }
             catch (Exception)
             {
-                // ?閬??典????賢歇瘨仃嚗?頛芰絞閮?胯?
+                // 前景視窗標題可能瞬時已消失，略過本輪統計即可
             }
         }
 
-        private void ChangeWorkState(eWorkStates _workStates) //?湔撌乩????Work?est
+        private void ChangeWorkState(eWorkStates _workStates) //更改工作狀態（Work 或 Rest）
         {
             switch (_workStates)
             {
@@ -926,10 +928,10 @@ namespace Flower_Pomodoro_Timer
             return task?.Task ?? "(No Task)";
         }
 
-                #region ??蝘鞈?
+                #region 使用秒數資訊
         private const int MaxProcessesToRender = 20;
 
-        private void CalAWParentSec(string _AWFullName, string _LastAWFullName, string _ProcessName, string _WindowTitle) //閮?瘥???蝒?雿輻??蝘嚗蒂?萄遣?啁?????帖璇?
+        private void CalAWParentSec(string _AWFullName, string _LastAWFullName, string _ProcessName, string _WindowTitle) //計算每個視窗的使用秒數，並建立對應的橫條
         {
             if (string.IsNullOrWhiteSpace(_ProcessName) || string.IsNullOrWhiteSpace(_WindowTitle))
             {
@@ -959,7 +961,7 @@ namespace Flower_Pomodoro_Timer
             m_LastAWParentIndex = parent.ProcessOrder;
         }
 
-        private AWParentStatus CreateParentStatus(string processName)//?萄遣?園?撅斤?????蝔??迂????璈急?????
+        private AWParentStatus CreateParentStatus(string processName)//建立父層狀態，包含應用程式名稱及對應的橫條
         {
             AWParentStatus parent = new AWParentStatus
             {
@@ -979,7 +981,7 @@ namespace Flower_Pomodoro_Timer
             parent.ProcessPlusButton.Image = imageListPlus.Images[0];
             parent.ProcessPlusButton.Click += new EventHandler(buttonPlus_Click);
             parent.ProcessPlusButton.Tag = parent;
-            toolTipAll.SetToolTip(parent.ProcessPlusButton, "撅?/?嗉絲");
+            toolTipAll.SetToolTip(parent.ProcessPlusButton, "展開 / 收起");
             Controls.Add(parent.ProcessPlusButton);
 
             parent.ProcessPBox.Location = new Point(360, 0);
@@ -1006,7 +1008,7 @@ namespace Flower_Pomodoro_Timer
             return status;
         }
 
-        private void SortAWParentStatus() //??AW?園?撅斤?雿輻蝘??嚗??箏?20??
+        private void SortAWParentStatus() //對 AW 父層依使用秒數排序，取出前 20 名
         {
             List<AWParentStatus> orderedParents = m_AWParentStatus
                 .OrderByDescending(x => x.Seconds)
@@ -1020,7 +1022,7 @@ namespace Flower_Pomodoro_Timer
             }
         }
 
-        private void SortAWStatus(AWParentStatus _myAWParentStatus) //??AW摮?撅斤?雿輻蝘????
+        private void SortAWStatus(AWParentStatus _myAWParentStatus) //對 AW 子層依使用秒數排序
         {
             List<AWStatus> orderedChildren = _myAWParentStatus.MyAWStatus
                 .OrderByDescending(x => x.Seconds)
@@ -1034,8 +1036,8 @@ namespace Flower_Pomodoro_Timer
         }
         #endregion
 
-        #region 憿舐內璈急?
-        private void SetAWParentStatusBars() //閮剔蔭?園?撅斗帖璇??詨潘?
+        #region 顯示橫條
+        private void SetAWParentStatusBars() //設置父層橫條的數值
         {
             int tmpT = (int)DateTime.Now.Subtract(m_FirstStartTime).Subtract(m_TotalAWAccumulateTime).TotalSeconds;
             if (tmpT <= 0)
@@ -1065,7 +1067,7 @@ namespace Flower_Pomodoro_Timer
             }
         }
 
-        public void SetPicValue(BarChartBox picBar, string awName, int value) //蝜芾ˊpicBar??帖璇??桀???函洵銝?＊蝷粹???AR
+        public void SetPicValue(BarChartBox picBar, string awName, int value) //繪製 picBar 橫條，用於第一條顯示閒置時間
         {
             TimeSpan t = TimeSpan.FromSeconds(Math.Max(0, value));
             string tString = t.ToString(@"hh\:mm\:ss");
@@ -1074,7 +1076,7 @@ namespace Flower_Pomodoro_Timer
             picBar.SetBar(text, ratio, m_PBarBackColor, m_PBarForeColor);
         }
 
-        public int ShowParentPicBox(AWParentStatus _awParentStatus, int _currentRow) //蝜芾ˊ?嗅惜picBar??帖璇??桀??怠蝚砍嗾銵?
+        public int ShowParentPicBox(AWParentStatus _awParentStatus, int _currentRow) //繪製父層 picBar 橫條在第幾列
         {
             TimeSpan t = TimeSpan.FromSeconds(_awParentStatus.Seconds);
             string tString = t.ToString(@"hh\:mm\:ss");
@@ -1090,7 +1092,7 @@ namespace Flower_Pomodoro_Timer
             return _currentRow;
         }
 
-        private int SetAWStatusBars(AWParentStatus _awParentStatus, int _tmpCurrentRow, bool _processPlusOr) //閮剔蔭摮?撅斗帖璇??詨?
+        private int SetAWStatusBars(AWParentStatus _awParentStatus, int _tmpCurrentRow, bool _processPlusOr) //設置子層橫條
         {
             if (_processPlusOr)
             {
@@ -1105,7 +1107,7 @@ namespace Flower_Pomodoro_Timer
             return _tmpCurrentRow;
         }
 
-        public int ShowPicBox(AWStatus _awStatus, int _currentRow) //蝜芾ˊpicBar??帖璇??桀??怠蝚砍嗾銵?
+        public int ShowPicBox(AWStatus _awStatus, int _currentRow) //繪製子層 picBar 橫條在第幾列
         {
             TimeSpan t = TimeSpan.FromSeconds(_awStatus.Seconds);
             string tString = t.ToString(@"hh\:mm\:ss");
@@ -1130,7 +1132,7 @@ namespace Flower_Pomodoro_Timer
             float ratio = (float)(Math.Max(0, value) / totalSeconds);
             return Math.Clamp(ratio, 0f, 1f);
         }
-        void ChangeFormColor() //?寡?閬??
+        void ChangeFormColor() //更改視窗顏色
         {
             Color tmpForeColor = Color.FromArgb(50, 50, 50);
             Color tmpBackColor = Color.FromArgb(200, 200, 200);
@@ -1139,22 +1141,22 @@ namespace Flower_Pomodoro_Timer
             {
                 switch (m_BackColorMode)
                 {
-                    case eColor.DefaultTomato://?身???
+                    case eColor.DefaultTomato://預設番茄紅
                         //m_BackColorMode = eColor.Grass;
                         tmpBackColor = Color.Tomato;
                         tmpForeColor = Color.Brown;
                         break;
-                    case eColor.Grass://?蝬?
+                    case eColor.Grass://草地綠
                         //m_BackColorMode = eColor.Sky;
                         tmpBackColor = Color.YellowGreen;
                         tmpForeColor = Color.DarkGreen;
                         break;
-                    case eColor.Sky://憭拍征??
+                    case eColor.Sky://天空藍
                         //m_BackColorMode = eColor.Gray;
                         tmpBackColor = Color.MediumTurquoise;
                         tmpForeColor = Color.SteelBlue;
                         break;
-                    case eColor.Gray://?啗
+                    case eColor.Gray://灰色
                         //m_BackColorMode = eColor.DefaultTomato;
                         tmpBackColor = Color.DimGray;
                         tmpForeColor = Color.Black;
@@ -1169,7 +1171,7 @@ namespace Flower_Pomodoro_Timer
                 tmpForeColor = Color.SteelBlue;
             }
 
-            foreach (Control tempcon in this.Controls)//?寡?閬??扳???園?????
+            foreach (Control tempcon in this.Controls)//遍歷視窗內的所有控制項
             {
                 if (tempcon is Label)
                 {
@@ -1183,7 +1185,7 @@ namespace Flower_Pomodoro_Timer
                         tempcon.ForeColor = tmpForeColor;
                     }
                 }
-                else if (tempcon is Button || tempcon is PictureBox)//?嗡??批????帖璇?
+                else if (tempcon is Button || tempcon is PictureBox)//處理按鈕及橫條
                 {
                     if (tempcon == m_BarCPU || tempcon == m_BarRAM || tempcon == m_BarDisk || tempcon == m_BarGPU || tempcon == m_BarVRAM)
                     {
@@ -1212,10 +1214,10 @@ namespace Flower_Pomodoro_Timer
         }
         #endregion
 
-        #region ?閫貊
-        private void buttonStart_Click(object sender, EventArgs e) //Start?
+        #region ? 鍵觸發
+        private void buttonStart_Click(object sender, EventArgs e) //Start 按鈕
         {
-            if (m_FirstStartTime == DateTime.MinValue) //蝚砌?甈⊥?銝?憪
+            if (m_FirstStartTime == DateTime.MinValue) //第一次按下開始鍵
             {
                 m_FirstStartTime = DateTime.Now;
                 m_PhaseStartTime = DateTime.Now;
@@ -1223,7 +1225,7 @@ namespace Flower_Pomodoro_Timer
                 //m_TimerMain.Enabled = true;
             }
 
-            if (buttonStart.Text == "Start" || buttonStart.Text == "Continue") //??????
+            if (buttonStart.Text == "Start" || buttonStart.Text == "Continue") //開始或繼續
             {
                 buttonStart.Text = "Pause";
                 m_NewStartTime = DateTime.Now;
@@ -1244,7 +1246,7 @@ namespace Flower_Pomodoro_Timer
             }
         }
 
-        private void buttonStart_SizeChanged(object sender, EventArgs e) //?嗥?Ｙ葬?典銝???銋?閫貊?寡?Start?撠箏站
+        private void buttonStart_SizeChanged(object sender, EventArgs e) //當畫面縮小至右下角時，也觸發調整 Start 按鈕尺寸
         {
             if (!m_MinimumSizeOr)
             {
@@ -1256,7 +1258,7 @@ namespace Flower_Pomodoro_Timer
             }
         }
 
-                public void buttonPlus_Click(object? sender, EventArgs e) //瘥?銵極雿???"+"?
+                public void buttonPlus_Click(object? sender, EventArgs e) //每行工作排程的 "+" 按鈕
         {
             if (sender is not Button tmpbutton || tmpbutton.Tag is not AWParentStatus tmpAWP)
             {
@@ -1274,7 +1276,7 @@ namespace Flower_Pomodoro_Timer
             tmpAWP.ProcessPlusOr = !tmpAWP.ProcessPlusOr;
         }
 
-        private void buttonOpacity_Click(object sender, EventArgs e) //閮剖???摨?
+        private void buttonOpacity_Click(object sender, EventArgs e) //設定透明度
         {
             Opacity -= 0.25;
             switch (Opacity)
@@ -1302,23 +1304,23 @@ namespace Flower_Pomodoro_Timer
             }
         }
 
-        private void buttonAlwaysTop_Click(object sender, EventArgs e) //?銝惜憿舐內
+        private void buttonAlwaysTop_Click(object sender, EventArgs e) //最上層顯示
         {
             TopMost = !TopMost;
             if (TopMost)
             {
                 buttonAlwaysTop.Text = "PIN";
-                toolTipAll.SetToolTip(buttonAlwaysTop, "???銝惜憿舐內");
+                toolTipAll.SetToolTip(buttonAlwaysTop, "切換最上層顯示");
             }
             else
             {
                 buttonAlwaysTop.Text = "UNPIN";
-                toolTipAll.SetToolTip(buttonAlwaysTop, "???銝惜憿舐內");
+                toolTipAll.SetToolTip(buttonAlwaysTop, "切換最上層顯示");
             }
-            m_TopMost = TopMost; //蝝??甈∟矽?渡??銝惜憿舐內閮剖?
+            m_TopMost = TopMost; //紀錄本次調整的最上層顯示設定
         }
 
-        private void buttonBackColor_Click(object sender, EventArgs e) //????脣蔗
+        private void buttonBackColor_Click(object sender, EventArgs e) //切換背景色彩
         {
             m_BackColorMode++;
             if (m_BackColorMode.ToString() == "MAX")
@@ -1328,7 +1330,7 @@ namespace Flower_Pomodoro_Timer
             ChangeFormColor();
         }
 
-        private void buttonHelp_Click(object sender, EventArgs e) //??隤芣?閬?
+        private void buttonHelp_Click(object sender, EventArgs e) //開啟說明視窗
         {
             if (m_FormHelp != null && !m_FormHelp.IsDisposed)
             {
@@ -1356,7 +1358,7 @@ namespace Flower_Pomodoro_Timer
             m_FormHelp.Show(this);
         }
 
-        private void buttonMinimumSize_Click(object sender, EventArgs e) //霈?蝒葬?啣銝?
+        private void buttonMinimumSize_Click(object sender, EventArgs e) //讓視窗縮小至右下角
         {
             if (m_MinimumSizeOr)
             {
@@ -1372,7 +1374,7 @@ namespace Flower_Pomodoro_Timer
             }
         }
 
-        private void buttonQuit_Click(object sender, EventArgs e) //?ａ?
+        private void buttonQuit_Click(object sender, EventArgs e) //離開
         {
             CloseChildWindowsInOrder();
             MinimumSize = new Size(MinimumSize.Width, 40);
@@ -1384,7 +1386,7 @@ namespace Flower_Pomodoro_Timer
             Application.Exit();
         }
 
-        private void buttonTest_Click(object sender, EventArgs e) //皜祈岫???
+        private void buttonTest_Click(object sender, EventArgs e) //測試按鈕
         {
             ShowRestReminderImage(true);
         }

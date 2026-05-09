@@ -39,6 +39,8 @@ namespace Flower_Pomodoro_Timer
             LoadLogs();
             InitializeDateRange();
             RefreshDataAndRedraw();
+            this.AutoScaleMode = AutoScaleMode.Dpi;  // 改這行
+            // 預設是 AutoScaleMode.Font，有時會造成元件重疊
         }
 
         private void InitializeLayout()
