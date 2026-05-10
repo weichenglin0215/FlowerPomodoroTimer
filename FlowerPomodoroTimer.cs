@@ -130,7 +130,6 @@ namespace Flower_Pomodoro_Timer
         formHelp? m_FormHelp;
         FormUsageAnalysis? m_FormUsageAnalysis;
         bool m_ClosingChildWindows;
-
         private void CloseChildWindowsInOrder()
         {
             if (m_ClosingChildWindows)
@@ -221,9 +220,9 @@ namespace Flower_Pomodoro_Timer
             System.Drawing.Rectangle workingRectangle = screen.WorkingArea;
             // Set the size of the form slightly less than size of 
             // working rectangle.
-            MinimumSize = new Size(1360, 360);
-            MaximumSize = new Size(1360, 720);
-            this.Size = new System.Drawing.Size(1360, 360);
+            MinimumSize = new Size(1360, 400);
+            MaximumSize = new Size(1360, 800);
+            Size = new Size(1360, 400);
             //this.Size = new System.Drawing.Size(workingRectangle.Width - 10, workingRectangle.Height - 10);
             // Set the location so the entire form is visible.
             //this.Location = new System.Drawing.Point(5, 5);
@@ -233,16 +232,17 @@ namespace Flower_Pomodoro_Timer
             this.Location = newPosition;
 
             labelTimer.Size = new Size(310, 70);
-            labelTimer.Font = new Font(labelTimer.Font.FontFamily, 50, labelTimer.Font.Style);
+            labelTimer.Font = new Font(labelTimer.Font.FontFamily, 40, labelTimer.Font.Style);
             labelTimer.Location = new Point(20, 5);
 
             buttonStart.Size = new Size(88, 40);
-            buttonStart.Font = new Font(buttonStart.Font.FontFamily, 22, buttonStart.Font.Style);
+            buttonStart.MaximumSize = new Size(200, 40);
+            buttonStart.Font = new Font(buttonStart.Font.FontFamily, 16, buttonStart.Font.Style);
             buttonStart.Location = new Point(125, 80);
             buttonStart_SizeChanged(this, EventArgs.Empty);
 
             labelTotalTimer.Size = new Size(310, 46);
-            labelTotalTimer.Font = new Font(labelTimer.Font.FontFamily, 30, labelTimer.Font.Style);
+            labelTotalTimer.Font = new Font(labelTimer.Font.FontFamily, 24, labelTimer.Font.Style);
             labelTotalTimer.Location = new Point(20, 124);
 
             int barY = 180;
@@ -255,6 +255,9 @@ namespace Flower_Pomodoro_Timer
             m_BarDisk.Bounds = new Rectangle(20, barY, barWidth, barHeight); barY += barHeight + spacing;
             m_BarGPU.Bounds = new Rectangle(20, barY, barWidth, barHeight); barY += barHeight + spacing;
             m_BarVRAM.Bounds = new Rectangle(20, barY, barWidth, barHeight);
+
+            m_FirstBar.Location = new Point(360, 0);
+            m_FirstBar.Size = new Size(Math.Max(1000, ClientSize.Width - 360), 30);
         }
         // 縮小視窗至右下角，僅顯示主要計時器及總計時器
         private void SetFormSizeMini()
@@ -266,9 +269,9 @@ namespace Flower_Pomodoro_Timer
             System.Drawing.Rectangle workingRectangle = screen.WorkingArea;
             // Set the size of the form slightly less than size of 
             // working rectangle.
-            MinimumSize = new Size(180, 160);
+            MinimumSize = new Size(240, 240);
             MaximumSize = new Size(1360, 720);
-            this.Size = new System.Drawing.Size(180, 160);
+            Size = new Size(240, 240);
             //this.Size = new System.Drawing.Size(workingRectangle.Width - 10, workingRectangle.Height - 10);
             // Set the location so the entire form is visible.
             //this.Location = new System.Drawing.Point(5, 5);
@@ -277,22 +280,22 @@ namespace Flower_Pomodoro_Timer
             newPosition.Y = workingRectangle.Height - MinimumSize.Height;
             this.Location = newPosition;
 
-            labelTimer.Size = new Size(155, 60);
-            labelTimer.Font = new Font(labelTimer.Font.FontFamily, 40, labelTimer.Font.Style);
-            labelTimer.Location = new Point(12, 25);
+            labelTimer.Size = new Size(200, 60);
+            labelTimer.Font = new Font(labelTimer.Font.FontFamily, 36, labelTimer.Font.Style);
+            labelTimer.Location = new Point(20, 25);
 
-            buttonStart.Size = new Size(44, 20);
-            buttonStart.Font = new Font(buttonStart.Font.FontFamily, 12, buttonStart.Font.Style);
-            buttonStart.Location = new Point(60, 85);
+            buttonStart.Size = new Size(44, 24);
+            buttonStart.Font = new Font(buttonStart.Font.FontFamily, 10, buttonStart.Font.Style);
+            buttonStart.Location = new Point(140, 90);
             buttonStart_SizeChanged(this, EventArgs.Empty);
 
-            labelTotalTimer.Size = new Size(140, 40);
-            labelTotalTimer.Font = new Font(labelTimer.Font.FontFamily, 24, labelTimer.Font.Style);
-            labelTotalTimer.Location = new Point(20, 115);
+            labelTotalTimer.Size = new Size(200, 40);
+            labelTotalTimer.Font = new Font(labelTimer.Font.FontFamily, 20, labelTimer.Font.Style);
+            labelTotalTimer.Location = new Point(20, 125);
 
-            int barY = 160;
-            int barWidth = 160;
-            int barHeight = 16;
+            int barY = 170;
+            int barWidth = 220;
+            int barHeight = 25;
             int spacing = 3;
 
             m_BarCPU.Bounds = new Rectangle(10, barY, barWidth, barHeight); barY += barHeight + spacing;
@@ -302,8 +305,8 @@ namespace Flower_Pomodoro_Timer
             m_BarVRAM.Bounds = new Rectangle(10, barY, barWidth, barHeight);
 
             // Increase window height to accommodate the bars
-            this.Height = barY + barHeight + 10;
-            MinimumSize = new Size(180, this.Height);
+            Height = barY + barHeight + 10;
+            MinimumSize = new Size(180, Height);
             
             // Adjust position to stay at the bottom right
             this.Location = new Point(workingRectangle.Width - this.Width, workingRectangle.Height - this.Height);
@@ -1082,9 +1085,11 @@ namespace Flower_Pomodoro_Timer
             string tString = t.ToString(@"hh\:mm\:ss");
             string text = tString + " : " + _awParentStatus.ProcessOrder + " : " + _awParentStatus.ProcessName;
 
-            _awParentStatus.ProcessPlusButton.Location = new Point(330, _currentRow * 30);
+            int rowTop = _currentRow * 30;
+            _awParentStatus.ProcessPlusButton.Location = new Point(330, rowTop);
             _awParentStatus.ProcessPlusButton.Visible = true;
-            _awParentStatus.ProcessPBox.Location = new Point(360, _currentRow * 30);
+            _awParentStatus.ProcessPBox.Location = new Point(360, rowTop);
+            _awParentStatus.ProcessPBox.Size = new Size(Math.Max(1000, ClientSize.Width - 360), 30);
             _awParentStatus.ProcessPBox.Visible = true;
             _awParentStatus.ProcessPBox.SetBar(text, CalculateRatio(_awParentStatus.Seconds), m_PBarBackColor, m_PBarForeColor);
 
@@ -1114,6 +1119,7 @@ namespace Flower_Pomodoro_Timer
             string text = tString + " : " + _awStatus.WindowTitleOrder + " : " + _awStatus.WindowTitleName;
 
             _awStatus.WindowTitlePBox.Location = new Point(430, _currentRow * 30);
+            _awStatus.WindowTitlePBox.Size = new Size(Math.Max(930, ClientSize.Width - 430), 30);
             _awStatus.WindowTitlePBox.Visible = true;
             _awStatus.WindowTitlePBox.SetBar(text, CalculateRatio(_awStatus.Seconds), m_PBarBackColor, m_PBarForeColor);
 
@@ -1363,12 +1369,12 @@ namespace Flower_Pomodoro_Timer
             if (m_MinimumSizeOr)
             {
                 m_MinimumSizeOr = false;
-                buttonMinimumSize.Text = "MIN";
+                buttonMinimumSize.Text = "◢";
                 SetFormSizeNormal();
             }
             else
             {
-                buttonMinimumSize.Text = "MAX";
+                buttonMinimumSize.Text = "◤";
                 m_MinimumSizeOr = true;
                 SetFormSizeMini();
             }
@@ -1408,9 +1414,4 @@ namespace Flower_Pomodoro_Timer
         #endregion
     }
 }
-
-
-
-
-
 

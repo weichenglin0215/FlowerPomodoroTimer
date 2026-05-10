@@ -33,31 +33,37 @@ namespace Flower_Pomodoro_Timer
         public FormUsageAnalysis()
         {
             Text = "番茄花鐘-統計分析";
+            AutoScaleMode = AutoScaleMode.Dpi;
             WindowState = FormWindowState.Maximized;
             BackColor = Color.White;
             InitializeLayout();
             LoadLogs();
             InitializeDateRange();
             RefreshDataAndRedraw();
-            this.AutoScaleMode = AutoScaleMode.Dpi;  // 改這行
-            // 預設是 AutoScaleMode.Font，有時會造成元件重疊
         }
 
         private void InitializeLayout()
         {
-            Panel topPanel = new Panel { Dock = DockStyle.Top, Height = 56 };
-            topPanel.Controls.Add(new Label { Text = "起始日期", AutoSize = true, Location = new Point(20, 18), Font = m_TextFont });
-            topPanel.Controls.Add(new Label { Text = "結束日期", AutoSize = true, Location = new Point(360, 18), Font = m_TextFont });
+            FlowLayoutPanel topPanel = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                Height = 56,
+                Padding = new Padding(20, 12, 20, 8),
+                WrapContents = false,
+                AutoScroll = true
+            };
+            topPanel.Controls.Add(new Label { Text = "起始日期", AutoSize = true, Margin = new Padding(0, 5, 8, 0), Font = m_TextFont });
 
             m_StartDatePicker.Format = DateTimePickerFormat.Short;
             m_EndDatePicker.Format = DateTimePickerFormat.Short;
             m_StartDatePicker.Font = m_TextFont;
             m_EndDatePicker.Font = m_TextFont;
-            m_StartDatePicker.Location = new Point(100, 14);
-            m_EndDatePicker.Location = new Point(440, 14);
+            m_StartDatePicker.Margin = new Padding(0, 0, 32, 0);
+            m_EndDatePicker.Margin = new Padding(0);
             m_StartDatePicker.ValueChanged += (_, _) => RefreshDataAndRedraw();
             m_EndDatePicker.ValueChanged += (_, _) => RefreshDataAndRedraw();
             topPanel.Controls.Add(m_StartDatePicker);
+            topPanel.Controls.Add(new Label { Text = "結束日期", AutoSize = true, Margin = new Padding(0, 5, 8, 0), Font = m_TextFont });
             topPanel.Controls.Add(m_EndDatePicker);
             Controls.Add(topPanel);
 

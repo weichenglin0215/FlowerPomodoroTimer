@@ -8,23 +8,15 @@ namespace Flower_Pomodoro_Timer
 {
     public partial class formHelp : Form
     {
-        private TextBox textBoxRestImageFolder = null!;
-        private Button buttonSelectRestImageFolder = null!;
-        private CheckBox checkBoxEnableRestImage = null!;
-        private Button buttonTestRestImage = null!;
-        private Button buttonOpenUsageAnalysis = null!;
-        private Label labelRestImage = null!;
-
         public event Action? TestRestImageRequested;
         public event Action? OpenUsageAnalysisRequested;
 
         public formHelp()
         {
             InitializeComponent();
-            this.AutoScaleMode = AutoScaleMode.Dpi;  // 改這行
-            // 預設是 AutoScaleMode.Font，有時會造成元件重疊
+            this.AutoScaleMode = AutoScaleMode.Dpi;  //
+            //
             buttonOK.DialogResult = DialogResult.OK;
-            InitializeRestImageControls();
             LoadRestImageSettingsToUi();
         }
 
@@ -60,75 +52,6 @@ namespace Flower_Pomodoro_Timer
             File.WriteAllText(shortcutPath, content);
         }
 
-        private void InitializeRestImageControls()
-        {
-            labelRestImage = new Label
-            {
-                Text = "休息遮罩圖片設定",
-                AutoSize = true,
-                Font = new Font("Microsoft JhengHei UI", 11F, FontStyle.Bold),
-                ForeColor = Color.WhiteSmoke,
-                Location = new Point(68, 292)
-            };
-
-            textBoxRestImageFolder = new TextBox
-            {
-                Name = "textBoxRestImageFolder",
-                Location = new Point(72, 322),
-                Size = new Size(530, 27)
-            };
-
-            buttonSelectRestImageFolder = new Button
-            {
-                Text = "選擇圖片目錄",
-                AutoSize = true,
-                FlatStyle = FlatStyle.Flat,
-                Font = new Font("Microsoft JhengHei UI", 11F, FontStyle.Regular),
-                ForeColor = Color.WhiteSmoke,
-                Location = new Point(612, 319)
-            };
-            buttonSelectRestImageFolder.Click += buttonSelectRestImageFolder_Click;
-
-            checkBoxEnableRestImage = new CheckBox
-            {
-                Text = "開啟休息時顯示圖片",
-                AutoSize = true,
-                ForeColor = Color.WhiteSmoke,
-                Location = new Point(72, 360)
-            };
-
-            buttonTestRestImage = new Button
-            {
-                Text = "測試：立即顯示圖片",
-                AutoSize = true,
-                FlatStyle = FlatStyle.Flat,
-                Font = new Font("Microsoft JhengHei UI", 11F, FontStyle.Regular),
-                ForeColor = Color.WhiteSmoke,
-                Location = new Point(260, 354)
-            };
-            buttonTestRestImage.Click += buttonTestRestImage_Click;
-
-            buttonOpenUsageAnalysis = new Button
-            {
-                Text = "開啟 番茄花鐘-統計分析",
-                AutoSize = true,
-                FlatStyle = FlatStyle.Flat,
-                Font = new Font("Microsoft JhengHei UI", 11F, FontStyle.Regular),
-                ForeColor = Color.WhiteSmoke,
-                Location = new Point(500, 354)
-            };
-            buttonOpenUsageAnalysis.Click += (_, _) => OpenUsageAnalysisRequested?.Invoke();
-
-            Controls.Add(labelRestImage);
-            Controls.Add(textBoxRestImageFolder);
-            Controls.Add(buttonSelectRestImageFolder);
-            Controls.Add(checkBoxEnableRestImage);
-            Controls.Add(buttonTestRestImage);
-            Controls.Add(buttonOpenUsageAnalysis);
-
-            ClientSize = new Size(984, 430);
-            buttonOK.Location = new Point(447, 388);
-        }
 
         private void LoadRestImageSettingsToUi()
         {
@@ -145,7 +68,7 @@ namespace Flower_Pomodoro_Timer
         private void buttonSelectRestImageFolder_Click(object? sender, EventArgs e)
         {
             using FolderBrowserDialog dialog = new FolderBrowserDialog();
-            dialog.Description = "選擇休息時顯示圖片的資料夾";
+            dialog.Description = "選擇休息提醒圖片資料夾";
             dialog.SelectedPath = textBoxRestImageFolder.Text;
             if (dialog.ShowDialog(this) == DialogResult.OK)
             {
@@ -160,10 +83,25 @@ namespace Flower_Pomodoro_Timer
             TestRestImageRequested?.Invoke();
         }
 
+        private void buttonOpenUsageAnalysis_Click(object? sender, EventArgs e)
+        {
+            OpenUsageAnalysisRequested?.Invoke();
+        }
+
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             SaveRestImageSettingsFromUi();
             base.OnFormClosing(e);
+        }
+
+        private void label2_Click(object sender, EventArgs e)
+        {
+
+        }
+
+        private void buttonOK_Click(object sender, EventArgs e)
+        {
+            
         }
     }
 }
