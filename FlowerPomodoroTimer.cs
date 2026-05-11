@@ -369,6 +369,22 @@ namespace Flower_Pomodoro_Timer
             Controls.Add(m_BarDisk);
             Controls.Add(m_BarGPU);
             Controls.Add(m_BarVRAM);
+
+            m_BarVRAM.Cursor = Cursors.Hand;
+            m_BarVRAM.Click += (s, e) => 
+            { 
+                RefreshGpuCounters(); 
+                UpdatePerformanceInfo(); 
+            };
+        }
+
+        private void DisposeCounters(List<PerformanceCounter> counters)
+        {
+            foreach (var counter in counters)
+            {
+                try { counter.Dispose(); } catch { }
+            }
+            counters.Clear();
         }
 
         private void RefreshGpuCounters()
@@ -377,37 +393,37 @@ namespace Flower_Pomodoro_Timer
             {
                 var category = new PerformanceCounterCategory("GPU Engine");
                 var names = category.GetInstanceNames();
-                m_GpuUsageCounters.Clear();
+                DisposeCounters(m_GpuUsageCounters);
                 foreach (var name in names)
                 {
                     if (name.Contains("engtype_", StringComparison.OrdinalIgnoreCase))
                     {
-                        m_GpuUsageCounters.Add(new PerformanceCounter("GPU Engine", "Utilization Percentage", name));
+                        try { m_GpuUsageCounters.Add(new PerformanceCounter("GPU Engine", "Utilization Percentage", name)); } catch { }
                     }
                 }
 
                 var vramCategory = new PerformanceCounterCategory("GPU Adapter Memory");
                 var vramNames = vramCategory.GetInstanceNames();
-                m_VramUsageCounters.Clear();
-                m_VramLimitCounters.Clear();
-                m_SharedVramUsageCounters.Clear();
-                m_SharedVramLimitCounters.Clear();
+                DisposeCounters(m_VramUsageCounters);
+                DisposeCounters(m_VramLimitCounters);
+                DisposeCounters(m_SharedVramUsageCounters);
+                DisposeCounters(m_SharedVramLimitCounters);
                 foreach (var name in vramNames)
                 {
-                    m_VramUsageCounters.Add(new PerformanceCounter("GPU Adapter Memory", "Dedicated Usage", name));
-                    m_VramLimitCounters.Add(new PerformanceCounter("GPU Adapter Memory", "Dedicated Limit", name));
-                    m_SharedVramUsageCounters.Add(new PerformanceCounter("GPU Adapter Memory", "Shared Usage", name));
-                    m_SharedVramLimitCounters.Add(new PerformanceCounter("GPU Adapter Memory", "Shared Limit", name));
+                    try { m_VramUsageCounters.Add(new PerformanceCounter("GPU Adapter Memory", "Dedicated Usage", name)); } catch { }
+                    // "Dedicated Limit" and "Shared Limit" do not exist in standard Windows GPU performance counters,
+                    // so we do not create them to avoid InvalidOperationExceptions.
+                    try { m_SharedVramUsageCounters.Add(new PerformanceCounter("GPU Adapter Memory", "Shared Usage", name)); } catch { }
                 }
 
                 var processVramCategory = new PerformanceCounterCategory("GPU Process Memory");
                 var processVramNames = processVramCategory.GetInstanceNames();
-                m_ProcessDedicatedVramUsageCounters.Clear();
-                m_ProcessSharedVramUsageCounters.Clear();
+                DisposeCounters(m_ProcessDedicatedVramUsageCounters);
+                DisposeCounters(m_ProcessSharedVramUsageCounters);
                 foreach (var name in processVramNames)
                 {
-                    m_ProcessDedicatedVramUsageCounters.Add(new PerformanceCounter("GPU Process Memory", "Dedicated Usage", name));
-                    m_ProcessSharedVramUsageCounters.Add(new PerformanceCounter("GPU Process Memory", "Shared Usage", name));
+                    try { m_ProcessDedicatedVramUsageCounters.Add(new PerformanceCounter("GPU Process Memory", "Dedicated Usage", name)); } catch { }
+                    try { m_ProcessSharedVramUsageCounters.Add(new PerformanceCounter("GPU Process Memory", "Shared Usage", name)); } catch { }
                 }
 
                 // Prime counters once. First NextValue is often stale/zero for rate-style counters.
