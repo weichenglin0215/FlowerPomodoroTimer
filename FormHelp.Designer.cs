@@ -52,7 +52,7 @@ namespace Flower_Pomodoro_Timer
             buttonOK.TabIndex = 0;
             buttonOK.Text = "懂了";
             buttonOK.UseVisualStyleBackColor = true;
-            buttonOK.Click += buttonOK_Click;
+            // buttonOK 的 DialogResult 已在建構子中設定為 OK，無需額外 Click 事件
             // 
             // buttonOpenStartFolder
             // 
@@ -90,7 +90,7 @@ namespace Flower_Pomodoro_Timer
             label2.Size = new Size(719, 150);
             label2.TabIndex = 3;
             label2.Text = "每次開機後都得去開啟番茄花鐘，是不是覺得有麻煩呢？\r\n貼心服務來了，請點一下右邊的按鍵，下次開機後就會自動開啟番茄花鐘。 --->\r\n\r\n其實只是在Windows的啟動資料夾中放上番茄花鐘的捷徑啦！\r\n\r\n番茄花鐘是綠色、無毒且開放原始碼的好工具。";
-            label2.Click += label2_Click;
+            // label2 僅作說明文字使用，不需要 Click 事件
             // 
             // labelRestImage
             // 
