@@ -20,6 +20,10 @@ namespace Flower_Pomodoro_Timer
         // ── UI 控制項 ──────────────────────────────────────────────
         private readonly DateTimePicker m_StartDatePicker = new DateTimePicker();
         private readonly DateTimePicker m_EndDatePicker = new DateTimePicker();
+        /// <summary>勾選後圖表中排除 FlowerPomodoroTimer 本身的使用時間。</summary>
+        private readonly CheckBox m_ChkExcludePomodoro = new CheckBox();
+        /// <summary>勾選後圖表中排除 Idle/Unknown usage 的時間。</summary>
+        private readonly CheckBox m_ChkExcludeIdle = new CheckBox();
         /// <summary>上方：每日堆疊長條圖的繪圖畫布。</summary>
         private readonly Panel m_DailyPanel = new Panel();
         /// <summary>下方：前 20 名水平長條圖的繪圖畫布。</summary>
@@ -58,6 +62,7 @@ namespace Flower_Pomodoro_Timer
         public FormUsageAnalysis()
         {
             Text = "番茄花鐘-統計分析";
+            AutoScaleDimensions = new System.Drawing.SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             WindowState = FormWindowState.Maximized;
             BackColor = Color.White;
@@ -97,6 +102,24 @@ namespace Flower_Pomodoro_Timer
             topPanel.Controls.Add(m_StartDatePicker);
             topPanel.Controls.Add(new Label { Text = "結束日期", AutoSize = true, Margin = new Padding(0, 5, 8, 0), Font = m_TextFont });
             topPanel.Controls.Add(m_EndDatePicker);
+
+            // 過濾勾選框：預設皆勾選，排除雜訊項目
+            m_ChkExcludePomodoro.Text = "排除 Flower Pomodoro Timer";
+            m_ChkExcludePomodoro.Checked = true;
+            m_ChkExcludePomodoro.AutoSize = true;
+            m_ChkExcludePomodoro.Margin = new Padding(32, 6, 8, 0);
+            m_ChkExcludePomodoro.Font = m_TextFont;
+            m_ChkExcludePomodoro.CheckedChanged += (_, _) => RefreshDataAndRedraw();
+            topPanel.Controls.Add(m_ChkExcludePomodoro);
+
+            m_ChkExcludeIdle.Text = "排除 Idle/Unknown usage";
+            m_ChkExcludeIdle.Checked = true;
+            m_ChkExcludeIdle.AutoSize = true;
+            m_ChkExcludeIdle.Margin = new Padding(0, 6, 0, 0);
+            m_ChkExcludeIdle.Font = m_TextFont;
+            m_ChkExcludeIdle.CheckedChanged += (_, _) => RefreshDataAndRedraw();
+            topPanel.Controls.Add(m_ChkExcludeIdle);
+
             Controls.Add(topPanel);
 
             // ── 分割容器 ───────────────────────────────────────────
@@ -209,6 +232,24 @@ namespace Flower_Pomodoro_Timer
                 DateTime d = ParseDate(e.Date);
                 return d >= start && d <= end;
             }).ToList();
+
+            // 依勾選框排除特定程序（FlowerPomodoroTimer 本身、Idle/Unknown usage）
+            bool excludePomodoro = m_ChkExcludePomodoro.Checked;
+            bool excludeIdle = m_ChkExcludeIdle.Checked;
+            if (excludePomodoro || excludeIdle)
+            {
+                filtered = filtered.Select(e => new UsageLogEntry
+                {
+                    Date = e.Date,
+                    GeneratedAt = e.GeneratedAt,
+                    TotalAppSeconds = e.TotalAppSeconds,
+                    TotalActiveWindowSeconds = e.TotalActiveWindowSeconds,
+                    Processes = e.Processes.Where(p =>
+                        !(excludePomodoro && p.ProcessName.Equals("FlowerPomodoroTimer", StringComparison.OrdinalIgnoreCase)) &&
+                        !(excludeIdle && p.ProcessName.Equals("Idle/Unknown usage", StringComparison.OrdinalIgnoreCase))
+                    ).ToList()
+                }).ToList();
+            }
 
             // 每日資料：依日期分組，各程序秒數加總（不分大小寫）
             m_DailyData = filtered

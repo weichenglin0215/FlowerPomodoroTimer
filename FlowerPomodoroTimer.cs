@@ -151,6 +151,8 @@ namespace Flower_Pomodoro_Timer
         readonly Random m_Random = new Random();
         /// <summary>上次顯示的休息圖片路徑，避免連續兩次顯示同一張圖。</summary>
         string m_LastRestImagePath = string.Empty;
+        /// <summary>目前追蹤中的日期；跨越午夜時用於觸發自動寫出並重設計數。</summary>
+        DateTime m_CurrentDate = DateTime.Today;
         RestImageOverlayForm? m_RestImageOverlay;
         formHelp? m_FormHelp;
         FormUsageAnalysis? m_FormUsageAnalysis;
@@ -729,28 +731,44 @@ namespace Flower_Pomodoro_Timer
         #region 使用紀錄
 
         /// <summary>
-        /// 將今日的視窗使用統計寫入 FlowerPomodoroTimer_Usage.log（每行一筆 JSON）。
-        /// 每次關閉程式時呼叫。寫入失敗時靜默略過。
+        /// 將指定日期的視窗使用統計寫入 FlowerPomodoroTimer_Usage.log（每行一筆 JSON）。
+        /// 同時將 Idle/Unknown usage（計時器運行中但無前景視窗的時間）寫為一筆程序紀錄。
+        /// 寫入失敗時靜默略過。
         /// </summary>
-        private void WriteUsageLogForToday()
+        /// <param name="date">要記錄的日期（通常為昨天或今天）。</param>
+        private void WriteUsageLogForDate(DateTime date)
         {
             try
             {
                 string logPath = Path.Combine(AppContext.BaseDirectory, "FlowerPomodoroTimer_Usage.log");
+
+                // 建立程序清單，降冪排序後加入 Idle 項目
+                List<UsageProcessEntry> processes = m_AWParentStatus
+                    .OrderByDescending(p => p.Seconds)
+                    .Select(p => new UsageProcessEntry
+                    {
+                        ProcessName = p.ProcessName,
+                        Seconds = p.Seconds
+                    })
+                    .ToList();
+
+                int idleSeconds = (int)m_TotalAccumulateTime.TotalSeconds - (int)m_TotalAWAccumulateTime.TotalSeconds;
+                if (idleSeconds > 0)
+                {
+                    processes.Add(new UsageProcessEntry
+                    {
+                        ProcessName = "Idle/Unknown usage",
+                        Seconds = idleSeconds
+                    });
+                }
+
                 UsageLogEntry entry = new UsageLogEntry
                 {
-                    Date = DateTime.Today.ToString("yyyy-MM-dd"),
+                    Date = date.ToString("yyyy-MM-dd"),
                     GeneratedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
                     TotalAppSeconds = (int)m_TotalAccumulateTime.TotalSeconds,
                     TotalActiveWindowSeconds = (int)m_TotalAWAccumulateTime.TotalSeconds,
-                    Processes = m_AWParentStatus
-                        .OrderByDescending(p => p.Seconds)
-                        .Select(p => new UsageProcessEntry
-                        {
-                            ProcessName = p.ProcessName,
-                            Seconds = p.Seconds
-                        })
-                        .ToList()
+                    Processes = processes
                 };
 
                 string json = JsonSerializer.Serialize(entry);
@@ -758,8 +776,55 @@ namespace Flower_Pomodoro_Timer
             }
             catch (Exception ex)
             {
-                Debug.WriteLine("WriteUsageLogForToday failed: " + ex.Message);
+                Debug.WriteLine("WriteUsageLogForDate failed: " + ex.Message);
             }
+        }
+
+        /// <summary>
+        /// 跨越午夜時呼叫：寫出前一天的使用紀錄後清除所有追蹤資料，
+        /// 重新從零開始計算新的一天。若計時器當時仍在運行，
+        /// 先將未結算的時段累入總計，再以午夜為起點開始新的一天。
+        /// </summary>
+        private void RolloverToNewDay()
+        {
+            // 先將目前正在執行的時段計入（避免午夜前的時間遺失）
+            if (m_TimerMain.Enabled)
+            {
+                DateTime now = DateTime.Now;
+                m_TotalAccumulateTime += now.Subtract(m_NewStartTime);
+                m_NewStartTime = now;
+            }
+
+            // 寫出前一天的統計
+            WriteUsageLogForDate(m_CurrentDate);
+
+            // 移除所有動態建立的程序橫條 Controls 並釋放
+            foreach (AWParentStatus parent in m_AWParentStatus)
+            {
+                Controls.Remove(parent.ProcessPlusButton);
+                Controls.Remove(parent.ProcessPBox);
+                parent.ProcessPlusButton.Dispose();
+                parent.ProcessPBox.Dispose();
+                foreach (AWStatus child in parent.MyAWStatus)
+                {
+                    Controls.Remove(child.WindowTitlePBox);
+                    child.WindowTitlePBox.Dispose();
+                }
+            }
+            m_AWParentStatus.Clear();
+            m_AWParentByProcess.Clear();
+
+            // 重設計時器與統計累計
+            m_TotalAccumulateTime = TimeSpan.Zero;
+            m_TotalAWAccumulateTime = TimeSpan.Zero;
+
+            // 若計時器仍在跑，以現在時刻為新一天的起點
+            if (m_TimerMain.Enabled)
+            {
+                m_FirstStartTime = DateTime.Now;
+            }
+
+            m_CurrentDate = DateTime.Today;
         }
 
         #endregion
@@ -853,6 +918,12 @@ namespace Flower_Pomodoro_Timer
         /// </summary>
         private void TimerMain_Tick(object? Sender, EventArgs e)
         {
+            // 偵測跨越午夜：自動寫出前一天統計並重設當日計數
+            if (DateTime.Today != m_CurrentDate)
+            {
+                RolloverToNewDay();
+            }
+
             UpdatePerformanceInfo();
 
             // 計算當前階段已用時長
@@ -1519,7 +1590,7 @@ namespace Flower_Pomodoro_Timer
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             CloseChildWindowsInOrder();
-            WriteUsageLogForToday();
+            WriteUsageLogForDate(m_CurrentDate);
             m_RestImageOverlay?.Close();
             m_RestImageOverlay?.Dispose();
             m_RestImageOverlay = null;

@@ -168,7 +168,7 @@ namespace Flower_Pomodoro_Timer
             // 
             // formHelp
             // 
-            AutoScaleDimensions = new SizeF(120F, 120F);
+            AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = Color.Tomato;
             ClientSize = new Size(1182, 583);
