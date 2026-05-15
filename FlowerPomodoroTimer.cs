@@ -153,7 +153,8 @@ namespace Flower_Pomodoro_Timer
         string m_LastRestImagePath = string.Empty;
         /// <summary>目前追蹤中的日期；跨越午夜時用於觸發自動寫出並重設計數。</summary>
         DateTime m_CurrentDate = DateTime.Today;
-        RestImageOverlayForm? m_RestImageOverlay;
+        /// <summary>各螢幕的休息提醒覆蓋視窗（多螢幕時每個螢幕一個）。</summary>
+        readonly List<RestImageOverlayForm> m_RestImageOverlays = new List<RestImageOverlayForm>();
         formHelp? m_FormHelp;
         FormUsageAnalysis? m_FormUsageAnalysis;
         bool m_ClosingChildWindows;
@@ -649,7 +650,7 @@ namespace Flower_Pomodoro_Timer
         /// 顯示休息提醒覆蓋圖片。
         /// 若 forceShow 為 false，則遵守使用者設定的 Enabled 開關；
         /// forceShow 為 true 時（測試按鈕或手動觸發）無視設定直接顯示。
-        /// 每次顯示時從圖片資料夾隨機挑選一張，避免連續兩次選到同一張。
+        /// 每個連接的螢幕各建立一個獨立覆蓋視窗，且盡量使用不同圖片。
         /// </summary>
         /// <param name="forceShow">true = 強制顯示；false = 遵守 Enabled 設定</param>
         private void ShowRestReminderImage(bool forceShow)
@@ -672,24 +673,71 @@ namespace Flower_Pomodoro_Timer
                 return;
             }
 
-            string selectedPath = PickRandomImagePath(imageFiles);
+            // 先關閉並釋放現有的所有覆蓋視窗
+            CloseAllRestImageOverlays();
+
             try
             {
-                m_RestImageOverlay?.Close();
-                m_RestImageOverlay?.Dispose();
-                m_RestImageOverlay = new RestImageOverlayForm(selectedPath);
-                m_RestImageOverlay.FormClosed += (_, _) =>
+                // 將圖片清單洗牌，讓每個螢幕分配到不同圖片；
+                // 若圖片數量大於 1，則把上次使用過的圖片移到最後，降低重複機率。
+                List<string> shuffled = imageFiles.OrderBy(_ => m_Random.Next()).ToList();
+                if (shuffled.Count > 1 && !string.IsNullOrEmpty(m_LastRestImagePath))
                 {
-                    m_RestImageOverlay?.Dispose();
-                    m_RestImageOverlay = null;
-                };
-                m_RestImageOverlay.Show();
-                m_RestImageOverlay.BringToFront();
+                    int lastIdx = shuffled.FindIndex(
+                        f => f.Equals(m_LastRestImagePath, StringComparison.OrdinalIgnoreCase));
+                    if (lastIdx >= 0)
+                    {
+                        shuffled.RemoveAt(lastIdx);
+                        shuffled.Add(m_LastRestImagePath);   // 移至末尾，最後才被循環使用
+                    }
+                }
+
+                // 記錄第一張圖片路徑（供下次避重複使用）
+                m_LastRestImagePath = shuffled[0];
+
+                Screen[] screens = Screen.AllScreens;
+                for (int i = 0; i < screens.Length; i++)
+                {
+                    string imagePath = shuffled[i % shuffled.Count];
+                    Rectangle bounds = screens[i].Bounds;
+
+                    RestImageOverlayForm overlay = new RestImageOverlayForm(imagePath, bounds);
+                    // 雙擊任一螢幕的覆蓋視窗 → 關閉所有螢幕的覆蓋視窗
+                    overlay.CloseAllRequested += CloseAllRestImageOverlays;
+                    overlay.FormClosed += (sender, _) =>
+                    {
+                        if (sender is RestImageOverlayForm closed)
+                        {
+                            m_RestImageOverlays.Remove(closed);
+                            closed.Dispose();
+                        }
+                    };
+                    m_RestImageOverlays.Add(overlay);
+                    overlay.Show();
+                    overlay.BringToFront();
+                }
             }
             catch (Exception ex)
             {
                 Debug.WriteLine("ShowRestReminderImage failed: " + ex.Message);
             }
+        }
+
+        /// <summary>
+        /// 關閉並釋放所有休息提醒覆蓋視窗。
+        /// </summary>
+        private void CloseAllRestImageOverlays()
+        {
+            foreach (RestImageOverlayForm overlay in m_RestImageOverlays.ToList())
+            {
+                try
+                {
+                    overlay.Close();
+                    overlay.Dispose();
+                }
+                catch { }
+            }
+            m_RestImageOverlays.Clear();
         }
 
         /// <summary>
@@ -832,9 +880,9 @@ namespace Flower_Pomodoro_Timer
         #region 休息提醒圖片覆蓋視窗
 
         /// <summary>
-        /// 全螢幕休息圖片覆蓋視窗（無邊框、最上層）。
+        /// 指定螢幕上的全螢幕休息圖片覆蓋視窗（無邊框、最上層）。
         /// - 單擊：縮小圖片至 90%
-        /// - 雙擊：關閉覆蓋視窗
+        /// - 雙擊：關閉此覆蓋視窗
         /// - 圖片等比例縮放，永遠垂直水平置中。
         /// </summary>
         private sealed class RestImageOverlayForm : Form
@@ -843,7 +891,12 @@ namespace Flower_Pomodoro_Timer
             private readonly PictureBox m_PictureBox = new PictureBox();
             private float m_Scale = 1f;
 
-            public RestImageOverlayForm(string imagePath)
+            /// <summary>雙擊任一覆蓋視窗時觸發，由父視窗訂閱後關閉所有螢幕上的覆蓋視窗。</summary>
+            public event Action? CloseAllRequested;
+
+            /// <param name="imagePath">要顯示的圖片路徑。</param>
+            /// <param name="screenBounds">此覆蓋視窗所覆蓋的螢幕範圍（Screen.Bounds）。</param>
+            public RestImageOverlayForm(string imagePath, Rectangle screenBounds)
             {
                 m_SourceImage = Image.FromFile(imagePath);
                 FormBorderStyle = FormBorderStyle.None;
@@ -852,7 +905,6 @@ namespace Flower_Pomodoro_Timer
                 ShowInTaskbar = false;
                 BackColor = Color.Black;
 
-                Rectangle screenBounds = Screen.PrimaryScreen?.Bounds ?? Screen.AllScreens.First().Bounds;
                 Bounds = screenBounds;
 
                 m_PictureBox.Image = m_SourceImage;
@@ -861,9 +913,9 @@ namespace Flower_Pomodoro_Timer
                 Controls.Add(m_PictureBox);
 
                 m_PictureBox.Click += (_, _) => ShrinkImage();
-                m_PictureBox.DoubleClick += (_, _) => Close();
+                m_PictureBox.DoubleClick += (_, _) => CloseAllRequested?.Invoke();
                 Click += (_, _) => ShrinkImage();
-                DoubleClick += (_, _) => Close();
+                DoubleClick += (_, _) => CloseAllRequested?.Invoke();
 
                 ApplyScale();
             }
@@ -1017,12 +1069,8 @@ namespace Flower_Pomodoro_Timer
                     m_NewPhaseStartTime = DateTime.Now;
                     m_PhaseAccumulateTime = TimeSpan.Zero;
                     m_WorkStates = eWorkStates.WORK;
-                    // 結束 Rest，關閉覆蓋圖片
-                    if (m_RestImageOverlay != null)
-                    {
-                        m_RestImageOverlay.Close();
-                        m_RestImageOverlay = null;
-                    }
+                    // 結束 Rest，關閉所有螢幕上的覆蓋圖片
+                    CloseAllRestImageOverlays();
                     break;
                 case eWorkStates.REST:
                     buttonStart.Enabled = true;
@@ -1030,7 +1078,9 @@ namespace Flower_Pomodoro_Timer
                     m_NewPhaseStartTime = DateTime.Now;
                     m_PhaseAccumulateTime = TimeSpan.Zero;
                     m_WorkStates = eWorkStates.REST;
-                    ShowRestReminderImage(false);
+                    // 注意：覆蓋圖片不在此處建立，而是在下方 BringToFront() 之後
+                    // 透過 BeginInvoke 延後至下一個訊息循環，確保主視窗已切回正確的
+                    // 虛擬桌面，覆蓋視窗才會顯示在同一個桌面上。
                     break;
                 case eWorkStates.PAUSE:
                 default:
@@ -1042,6 +1092,13 @@ namespace Flower_Pomodoro_Timer
             Show();
             WindowState = FormWindowState.Normal;
             BringToFront();
+
+            // 切換到 REST 時：等主視窗確實切回所在的虛擬桌面後，
+            // 才在同一桌面的每個螢幕上建立覆蓋視窗。
+            if (_workStates == eWorkStates.REST)
+            {
+                BeginInvoke(new Action(() => ShowRestReminderImage(false)));
+            }
         }
 
         #endregion
@@ -1591,9 +1648,7 @@ namespace Flower_Pomodoro_Timer
         {
             CloseChildWindowsInOrder();
             WriteUsageLogForDate(m_CurrentDate);
-            m_RestImageOverlay?.Close();
-            m_RestImageOverlay?.Dispose();
-            m_RestImageOverlay = null;
+            CloseAllRestImageOverlays();
             m_TimerMain?.Stop();
             m_TimerMain?.Dispose();
             m_TimerActiveWindow?.Stop();
