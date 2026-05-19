@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Drawing;
 using System.IO;
 
 namespace Flower_Pomodoro_Timer
@@ -20,6 +22,33 @@ namespace Flower_Pomodoro_Timer
         public static bool Enabled { get; private set; } = true;
 
         /// <summary>
+        /// 各螢幕上次拖曳後記住的圖片中心位置。
+        /// Key：螢幕範圍字串（格式 "X,Y,Width,Height"）。
+        /// Value：圖片中心在覆蓋視窗 client 座標中的 Point。
+        /// </summary>
+        public static Dictionary<string, Point> OverlayPositions { get; private set; } = new Dictionary<string, Point>();
+
+        /// <summary>將螢幕 Bounds 轉換為字典鍵值字串。</summary>
+        private static string BoundsKey(Rectangle r) => $"{r.X},{r.Y},{r.Width},{r.Height}";
+
+        /// <summary>
+        /// 查詢指定螢幕上次記住的圖片中心位置；若無記錄則回傳 null。
+        /// </summary>
+        public static Point? GetOverlayPosition(Rectangle screenBounds)
+        {
+            return OverlayPositions.TryGetValue(BoundsKey(screenBounds), out Point p) ? p : (Point?)null;
+        }
+
+        /// <summary>
+        /// 更新指定螢幕的圖片中心位置並立即寫入設定檔。
+        /// </summary>
+        public static void SaveOverlayPosition(Rectangle screenBounds, Point center)
+        {
+            OverlayPositions[BoundsKey(screenBounds)] = center;
+            WriteConfig();
+        }
+
+        /// <summary>
         /// 靜態建構子：程式啟動時自動從磁碟讀取一次設定，
         /// 確保其他程式碼取用屬性前已有正確的初始值。
         /// </summary>
@@ -37,6 +66,7 @@ namespace Flower_Pomodoro_Timer
         {
             ImageFolderPath = string.Empty;
             Enabled = true;
+            OverlayPositions.Clear();
             try
             {
                 if (!File.Exists(ConfigPath))
@@ -54,6 +84,22 @@ namespace Flower_Pomodoro_Timer
                     {
                         ImageFolderPath = line.Substring("ImageFolderPath=".Length).Trim();
                     }
+                    else if (line.StartsWith("OverlayPos|", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // 格式：OverlayPos|X,Y,Width,Height=centerX,centerY
+                        int eqIdx = line.IndexOf('=');
+                        if (eqIdx > 0)
+                        {
+                            string key = line.Substring("OverlayPos|".Length, eqIdx - "OverlayPos|".Length);
+                            string[] parts = line.Substring(eqIdx + 1).Split(',');
+                            if (parts.Length == 2 &&
+                                int.TryParse(parts[0].Trim(), out int cx) &&
+                                int.TryParse(parts[1].Trim(), out int cy))
+                            {
+                                OverlayPositions[key] = new Point(cx, cy);
+                            }
+                        }
+                    }
                 }
             }
             catch { }
@@ -68,12 +114,32 @@ namespace Flower_Pomodoro_Timer
         {
             ImageFolderPath = imageFolderPath?.Trim() ?? string.Empty;
             Enabled = enabled;
-            string[] lines =
+            WriteConfig();
+        }
+
+        /// <summary>
+        /// 將所有設定（含各螢幕覆蓋位置）寫入設定檔。
+        /// 格式：
+        ///   Enabled=true/false
+        ///   ImageFolderPath=路徑
+        ///   OverlayPos|X,Y,Width,Height=centerX,centerY （每個螢幕一行）
+        /// </summary>
+        private static void WriteConfig()
+        {
+            try
             {
-                $"Enabled={(Enabled ? "true" : "false")}",
-                $"ImageFolderPath={ImageFolderPath}"
-            };
-            File.WriteAllLines(ConfigPath, lines);
+                var lines = new List<string>
+                {
+                    $"Enabled={(Enabled ? "true" : "false")}",
+                    $"ImageFolderPath={ImageFolderPath}"
+                };
+                foreach (KeyValuePair<string, Point> kv in OverlayPositions)
+                {
+                    lines.Add($"OverlayPos|{kv.Key}={kv.Value.X},{kv.Value.Y}");
+                }
+                File.WriteAllLines(ConfigPath, lines);
+            }
+            catch { }
         }
     }
 }

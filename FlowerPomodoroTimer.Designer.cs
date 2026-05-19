@@ -51,12 +51,12 @@ namespace Flower_Pomodoro_Timer
             labelTimer.Font = new Font("Arial Narrow", 40F);
             labelTimer.ForeColor = Color.FromArgb(255, 224, 192);
             labelTimer.ImageKey = "(無)";
-            labelTimer.Location = new Point(20, 5);
+            labelTimer.Location = new Point(90, 10);
             labelTimer.Name = "labelTimer";
-            labelTimer.Size = new Size(310, 70);
+            labelTimer.Size = new Size(140, 60);
             labelTimer.TabIndex = 0;
             labelTimer.Text = "00:00";
-            labelTimer.TextAlign = ContentAlignment.BottomCenter;
+            labelTimer.TextAlign = ContentAlignment.MiddleCenter;
             toolTipAll.SetToolTip(labelTimer, "番茄時間");
             // 
             // buttonStart
@@ -66,7 +66,7 @@ namespace Flower_Pomodoro_Timer
             buttonStart.FlatStyle = FlatStyle.Flat;
             buttonStart.Font = new Font("Arial", 16F);
             buttonStart.ForeColor = Color.Brown;
-            buttonStart.Location = new Point(127, 80);
+            buttonStart.Location = new Point(120, 80);
             buttonStart.MaximumSize = new Size(200, 40);
             buttonStart.Name = "buttonStart";
             buttonStart.Size = new Size(70, 37);
@@ -92,12 +92,12 @@ namespace Flower_Pomodoro_Timer
             labelTotalTimer.Font = new Font("Arial Narrow", 24F);
             labelTotalTimer.ForeColor = Color.FromArgb(255, 224, 192);
             labelTotalTimer.ImageKey = "(無)";
-            labelTotalTimer.Location = new Point(20, 124);
+            labelTotalTimer.Location = new Point(90, 120);
             labelTotalTimer.Name = "labelTotalTimer";
-            labelTotalTimer.Size = new Size(310, 46);
+            labelTotalTimer.Size = new Size(130, 40);
             labelTotalTimer.TabIndex = 3;
             labelTotalTimer.Text = "00:00:00";
-            labelTotalTimer.TextAlign = ContentAlignment.BottomCenter;
+            labelTotalTimer.TextAlign = ContentAlignment.MiddleCenter;
             toolTipAll.SetToolTip(labelTotalTimer, "總使用時間");
             // 
             // buttonHelp
@@ -251,7 +251,7 @@ namespace Flower_Pomodoro_Timer
             Margin = new Padding(4);
             Name = "formFlowerPomodoroTimer";
             StartPosition = FormStartPosition.CenterScreen;
-            Text = "Flower Pomodoro Timer Ver 0.10.1.0   珍惜自己的一分一秒...";
+            Text = "Flower Pomodoro Timer Ver 0.10.3.0   珍惜自己的一分一秒...";
             ResumeLayout(false);
             PerformLayout();
 

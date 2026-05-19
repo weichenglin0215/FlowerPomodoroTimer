@@ -24,6 +24,8 @@ namespace Flower_Pomodoro_Timer
         private readonly CheckBox m_ChkExcludePomodoro = new CheckBox();
         /// <summary>勾選後圖表中排除 Idle/Unknown usage 的時間。</summary>
         private readonly CheckBox m_ChkExcludeIdle = new CheckBox();
+        /// <summary>勾選後圖表中排除 LockApp（Windows 鎖定畫面程序）的時間。</summary>
+        private readonly CheckBox m_ChkExcludeLockApp = new CheckBox();
         /// <summary>上方：每日堆疊長條圖的繪圖畫布。</summary>
         private readonly Panel m_DailyPanel = new Panel();
         /// <summary>下方：前 20 名水平長條圖的繪圖畫布。</summary>
@@ -119,6 +121,14 @@ namespace Flower_Pomodoro_Timer
             m_ChkExcludeIdle.Font = m_TextFont;
             m_ChkExcludeIdle.CheckedChanged += (_, _) => RefreshDataAndRedraw();
             topPanel.Controls.Add(m_ChkExcludeIdle);
+
+            m_ChkExcludeLockApp.Text = "排除 LockApp";
+            m_ChkExcludeLockApp.Checked = true;
+            m_ChkExcludeLockApp.AutoSize = true;
+            m_ChkExcludeLockApp.Margin = new Padding(0, 6, 0, 0);
+            m_ChkExcludeLockApp.Font = m_TextFont;
+            m_ChkExcludeLockApp.CheckedChanged += (_, _) => RefreshDataAndRedraw();
+            topPanel.Controls.Add(m_ChkExcludeLockApp);
 
             Controls.Add(topPanel);
 
@@ -233,10 +243,11 @@ namespace Flower_Pomodoro_Timer
                 return d >= start && d <= end;
             }).ToList();
 
-            // 依勾選框排除特定程序（FlowerPomodoroTimer 本身、Idle/Unknown usage）
+            // 依勾選框排除特定程序（FlowerPomodoroTimer 本身、Idle/Unknown usage、LockApp）
             bool excludePomodoro = m_ChkExcludePomodoro.Checked;
-            bool excludeIdle = m_ChkExcludeIdle.Checked;
-            if (excludePomodoro || excludeIdle)
+            bool excludeIdle     = m_ChkExcludeIdle.Checked;
+            bool excludeLockApp  = m_ChkExcludeLockApp.Checked;
+            if (excludePomodoro || excludeIdle || excludeLockApp)
             {
                 filtered = filtered.Select(e => new UsageLogEntry
                 {
@@ -246,7 +257,8 @@ namespace Flower_Pomodoro_Timer
                     TotalActiveWindowSeconds = e.TotalActiveWindowSeconds,
                     Processes = e.Processes.Where(p =>
                         !(excludePomodoro && p.ProcessName.Equals("FlowerPomodoroTimer", StringComparison.OrdinalIgnoreCase)) &&
-                        !(excludeIdle && p.ProcessName.Equals("Idle/Unknown usage", StringComparison.OrdinalIgnoreCase))
+                        !(excludeIdle     && p.ProcessName.Equals("Idle/Unknown usage",  StringComparison.OrdinalIgnoreCase)) &&
+                        !(excludeLockApp  && p.ProcessName.Equals("LockApp",             StringComparison.OrdinalIgnoreCase))
                     ).ToList()
                 }).ToList();
             }

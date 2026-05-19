@@ -57,6 +57,10 @@ namespace Flower_Pomodoro_Timer
         // ── 視窗狀態 ─────────────────────────────────────────────────
         /// <summary>是否處於右下角縮小模式。</summary>
         bool m_MinimumSizeOr = false;
+        /// <summary>縮小模式下上次拖曳後記住的視窗位置；null 表示尚未記錄，使用右下角預設位置。</summary>
+        Point? m_MiniFormLocation = null;
+        /// <summary>縮小模式視窗位置設定檔路徑。</summary>
+        static readonly string MiniConfigPath = Path.Combine(AppContext.BaseDirectory, "FlowerPomodoroTimer_Mini.config");
 
         // ── Work/Rest 狀態機 ─────────────────────────────────────────
         enum eWorkStates
@@ -206,6 +210,7 @@ namespace Flower_Pomodoro_Timer
             InitializeComponent();
             // 使用 DPI 感知縮放，避免高 DPI 模式下元件錯位
             this.AutoScaleMode = AutoScaleMode.Dpi;
+            LoadMiniLocation();
             InitializeFirstBar();
             InitializeMainTimer();
             InitializeActiveWindowTimer();
@@ -235,19 +240,19 @@ namespace Flower_Pomodoro_Timer
             newPosition.Y = (workingRectangle.Height - this.Height) / 2;
             this.Location = newPosition;
 
-            labelTimer.Size = new Size(310, 70);
+            labelTimer.Size = new Size(140, 60);
             labelTimer.Font = new Font(labelTimer.Font.FontFamily, 40, labelTimer.Font.Style);
-            labelTimer.Location = new Point(20, 5);
+            labelTimer.Location = new Point(90, 10);
 
-            buttonStart.Size = new Size(88, 40);
-            buttonStart.MaximumSize = new Size(200, 40);
+            buttonStart.Size = new Size(70, 40);
+            buttonStart.MaximumSize = new Size(70, 40);
             buttonStart.Font = new Font(buttonStart.Font.FontFamily, 16, buttonStart.Font.Style);
-            buttonStart.Location = new Point(125, 80);
-            buttonStart_SizeChanged(this, EventArgs.Empty);
+            buttonStart.Location = new Point(120, 80);
+            //buttonStart_SizeChanged(this, EventArgs.Empty);
 
-            labelTotalTimer.Size = new Size(310, 46);
+            labelTotalTimer.Size = new Size(130, 40);
             labelTotalTimer.Font = new Font(labelTimer.Font.FontFamily, 24, labelTimer.Font.Style);
-            labelTotalTimer.Location = new Point(20, 124);
+            labelTotalTimer.Location = new Point(90, 120);
 
             // 效能監控橫條：從 Y=180 開始，每條高 25px，間距 3px
             int barY = 180;
@@ -279,18 +284,18 @@ namespace Flower_Pomodoro_Timer
             MaximumSize = new Size(1360, 720);
             Size = new Size(240, 240);
 
-            labelTimer.Size = new Size(200, 60);
+            labelTimer.Size = new Size(140, 60);
             labelTimer.Font = new Font(labelTimer.Font.FontFamily, 36, labelTimer.Font.Style);
-            labelTimer.Location = new Point(20, 25);
+            labelTimer.Location = new Point(50, 30);
 
             buttonStart.Size = new Size(44, 24);
             buttonStart.Font = new Font(buttonStart.Font.FontFamily, 10, buttonStart.Font.Style);
-            buttonStart.Location = new Point(140, 90);
-            buttonStart_SizeChanged(this, EventArgs.Empty);
+            buttonStart.Location = new Point(100, 90);
+            //buttonStart_SizeChanged(this, EventArgs.Empty);
 
-            labelTotalTimer.Size = new Size(200, 40);
+            labelTotalTimer.Size = new Size(100, 40);
             labelTotalTimer.Font = new Font(labelTimer.Font.FontFamily, 20, labelTimer.Font.Style);
-            labelTotalTimer.Location = new Point(20, 125);
+            labelTotalTimer.Location = new Point(75, 125);
 
             int barY = 170;
             int barWidth = 220;
@@ -306,8 +311,52 @@ namespace Flower_Pomodoro_Timer
             Height = barY + barHeight + 10;
             MinimumSize = new Size(180, Height);
 
-            // 固定在螢幕右下角
-            this.Location = new Point(workingRectangle.Width - this.Width, workingRectangle.Height - this.Height);
+            // 預設放在螢幕右下角；若有上次拖曳後記住的位置則優先使用
+            this.Location = m_MiniFormLocation
+                ?? new Point(workingRectangle.Width - this.Width, workingRectangle.Height - this.Height);
+        }
+
+        /// <summary>
+        /// 從設定檔讀取縮小模式視窗位置，存入 m_MiniFormLocation。
+        /// 讀取失敗或檔案不存在時靜默略過，保持 null（使用預設右下角位置）。
+        /// </summary>
+        private void LoadMiniLocation()
+        {
+            try
+            {
+                if (!File.Exists(MiniConfigPath)) return;
+                int? x = null, y = null;
+                foreach (string line in File.ReadAllLines(MiniConfigPath))
+                {
+                    if (line.StartsWith("MiniFormX=", StringComparison.OrdinalIgnoreCase) &&
+                        int.TryParse(line.Substring("MiniFormX=".Length).Trim(), out int rx))
+                        x = rx;
+                    else if (line.StartsWith("MiniFormY=", StringComparison.OrdinalIgnoreCase) &&
+                        int.TryParse(line.Substring("MiniFormY=".Length).Trim(), out int ry))
+                        y = ry;
+                }
+                if (x.HasValue && y.HasValue)
+                    m_MiniFormLocation = new Point(x.Value, y.Value);
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// 將 m_MiniFormLocation 寫入設定檔，供下次啟動時讀取。
+        /// 寫入失敗時靜默略過。
+        /// </summary>
+        private void SaveMiniLocation()
+        {
+            if (!m_MiniFormLocation.HasValue) return;
+            try
+            {
+                File.WriteAllLines(MiniConfigPath, new[]
+                {
+                    $"MiniFormX={m_MiniFormLocation.Value.X}",
+                    $"MiniFormY={m_MiniFormLocation.Value.Y}"
+                });
+            }
+            catch { }
         }
 
         /// <summary>
@@ -701,9 +750,13 @@ namespace Flower_Pomodoro_Timer
                     string imagePath = shuffled[i % shuffled.Count];
                     Rectangle bounds = screens[i].Bounds;
 
-                    RestImageOverlayForm overlay = new RestImageOverlayForm(imagePath, bounds);
+                    // 讀取上次記住的圖片位置（若無記錄則 null，視窗自動置中）
+                    System.Drawing.Point? savedCenter = RestImageReminderSettings.GetOverlayPosition(bounds);
+                    RestImageOverlayForm overlay = new RestImageOverlayForm(imagePath, bounds, savedCenter);
                     // 雙擊任一螢幕的覆蓋視窗 → 關閉所有螢幕的覆蓋視窗
                     overlay.CloseAllRequested += CloseAllRestImageOverlays;
+                    // 拖曳結束後儲存新位置到設定檔
+                    overlay.PositionChanged += RestImageReminderSettings.SaveOverlayPosition;
                     overlay.FormClosed += (sender, _) =>
                     {
                         if (sender is RestImageOverlayForm closed)
@@ -721,6 +774,11 @@ namespace Flower_Pomodoro_Timer
             {
                 Debug.WriteLine("ShowRestReminderImage failed: " + ex.Message);
             }
+
+            // 覆蓋視窗全部建立後，將主視窗拉回 TopMost 層的最前方，
+            // 確保使用者可以直接與主視窗互動（拖曳位置、按下 Start 等）。
+            BringToFront();
+            Activate();
         }
 
         /// <summary>
@@ -881,23 +939,39 @@ namespace Flower_Pomodoro_Timer
 
         /// <summary>
         /// 指定螢幕上的全螢幕休息圖片覆蓋視窗（無邊框、最上層）。
-        /// - 單擊：縮小圖片至 90%
-        /// - 雙擊：關閉此覆蓋視窗
-        /// - 圖片等比例縮放，永遠垂直水平置中。
+        /// - 單擊（非拖曳）：縮小圖片至 90%，位置不變
+        /// - 拖曳：自由移動圖片位置，放開後觸發 PositionChanged 以儲存位置
+        /// - 雙擊：觸發 CloseAllRequested，關閉所有螢幕的覆蓋視窗
         /// </summary>
         private sealed class RestImageOverlayForm : Form
         {
             private readonly Image m_SourceImage;
             private readonly PictureBox m_PictureBox = new PictureBox();
+            private readonly Rectangle m_screenBounds;   // 此覆蓋視窗所在螢幕的 Bounds
             private float m_Scale = 1f;
+            private Point m_pictureCenter;               // 圖片中心在 client 座標的位置
 
-            /// <summary>雙擊任一覆蓋視窗時觸發，由父視窗訂閱後關閉所有螢幕上的覆蓋視窗。</summary>
+            // ── 拖曳狀態追蹤 ─────────────────────────────────────
+            private bool m_mouseDown;
+            private bool m_isDragging;
+            private Point m_dragStartScreen;             // 拖曳開始時的螢幕絕對座標
+            private Point m_picboxLocationAtDragStart;   // 拖曳開始時 PictureBox 的 Location
+
+            /// <summary>雙擊任一覆蓋視窗時觸發，由父視窗訂閱後關閉所有螢幕覆蓋視窗。</summary>
             public event Action? CloseAllRequested;
+
+            /// <summary>
+            /// 拖曳結束後觸發，帶出螢幕範圍與新的圖片中心座標（client 座標），
+            /// 供父視窗呼叫 RestImageReminderSettings.SaveOverlayPosition 持久化位置。
+            /// </summary>
+            public event Action<Rectangle, Point>? PositionChanged;
 
             /// <param name="imagePath">要顯示的圖片路徑。</param>
             /// <param name="screenBounds">此覆蓋視窗所覆蓋的螢幕範圍（Screen.Bounds）。</param>
-            public RestImageOverlayForm(string imagePath, Rectangle screenBounds)
+            /// <param name="savedCenter">上次記住的圖片中心（client 座標）；null 則預設置中。</param>
+            public RestImageOverlayForm(string imagePath, Rectangle screenBounds, Point? savedCenter = null)
             {
+                m_screenBounds = screenBounds;
                 m_SourceImage = Image.FromFile(imagePath);
                 FormBorderStyle = FormBorderStyle.None;
                 StartPosition = FormStartPosition.Manual;
@@ -907,43 +981,95 @@ namespace Flower_Pomodoro_Timer
 
                 Bounds = screenBounds;
 
+                // 使用儲存的位置，或預設為螢幕中央
+                m_pictureCenter = savedCenter ?? new Point(screenBounds.Width / 2, screenBounds.Height / 2);
+
                 m_PictureBox.Image = m_SourceImage;
                 m_PictureBox.SizeMode = PictureBoxSizeMode.StretchImage;
                 m_PictureBox.BackColor = Color.Black;
+                m_PictureBox.Cursor = Cursors.SizeAll;   // 提示可拖曳
                 Controls.Add(m_PictureBox);
 
+                // 單擊（WinForms 確認無拖曳後才觸發 Click）→ 縮小
                 m_PictureBox.Click += (_, _) => ShrinkImage();
                 m_PictureBox.DoubleClick += (_, _) => CloseAllRequested?.Invoke();
-                Click += (_, _) => ShrinkImage();
+                Click += (_, _) => ShrinkImage();        // 點擊背景黑色區域也縮小
                 DoubleClick += (_, _) => CloseAllRequested?.Invoke();
+
+                // 拖曳：用螢幕絕對座標計算位移，避免 PictureBox 移動後座標系偏移
+                m_PictureBox.MouseDown += PicBox_MouseDown;
+                m_PictureBox.MouseMove += PicBox_MouseMove;
+                m_PictureBox.MouseUp += PicBox_MouseUp;
 
                 ApplyScale();
             }
 
-            /// <summary>每次點擊將圖片縮小 10%，最小縮放至 10%。</summary>
+            /// <summary>每次點擊將圖片縮小 10%（維持中心點），最小縮放至 10%。</summary>
             private void ShrinkImage()
             {
                 m_Scale *= 0.9f;
-                if (m_Scale < 0.1f)
-                {
-                    m_Scale = 0.1f;
-                }
+                if (m_Scale < 0.1f) m_Scale = 0.1f;
                 ApplyScale();
             }
 
-            /// <summary>依目前 m_Scale 重新計算圖片大小並置中顯示。</summary>
+            /// <summary>依 m_Scale 計算圖片尺寸，並以 m_pictureCenter 為中心定位。</summary>
             private void ApplyScale()
             {
-                Rectangle screenBounds = Bounds;
-                float targetHeight = screenBounds.Height * m_Scale;
+                float targetHeight = ClientSize.Height * m_Scale;
                 float ratio = (float)m_SourceImage.Width / m_SourceImage.Height;
                 int width = Math.Max(1, (int)Math.Round(targetHeight * ratio));
                 int height = Math.Max(1, (int)Math.Round(targetHeight));
 
                 m_PictureBox.Size = new Size(width, height);
                 m_PictureBox.Location = new Point(
-                    (screenBounds.Width - width) / 2,
-                    (screenBounds.Height - height) / 2);
+                    m_pictureCenter.X - width / 2,
+                    m_pictureCenter.Y - height / 2);
+            }
+
+            private void PicBox_MouseDown(object? sender, MouseEventArgs e)
+            {
+                if (e.Button != MouseButtons.Left) return;
+                m_mouseDown = true;
+                m_isDragging = false;
+                m_dragStartScreen = Control.MousePosition;
+                m_picboxLocationAtDragStart = m_PictureBox.Location;
+                // 捕獲滑鼠：拖曳時滑鼠移出圖片範圍後仍持續收到 MouseMove / MouseUp，
+                // 不加這行的話只要游標離開 PictureBox 邊界拖曳就會中斷。
+                m_PictureBox.Capture = true;
+            }
+
+            private void PicBox_MouseMove(object? sender, MouseEventArgs e)
+            {
+                if (!m_mouseDown || e.Button != MouseButtons.Left) return;
+
+                Point cur = Control.MousePosition;
+                int dx = cur.X - m_dragStartScreen.X;
+                int dy = cur.Y - m_dragStartScreen.Y;
+
+                // 超過 5px 才正式判定為拖曳，避免正常點擊的手部抖動觸發移動
+                if (!m_isDragging && (Math.Abs(dx) > 5 || Math.Abs(dy) > 5))
+                    m_isDragging = true;
+
+                if (m_isDragging)
+                    m_PictureBox.Location = new Point(
+                        m_picboxLocationAtDragStart.X + dx,
+                        m_picboxLocationAtDragStart.Y + dy);
+            }
+
+            private void PicBox_MouseUp(object? sender, MouseEventArgs e)
+            {
+                if (e.Button != MouseButtons.Left || !m_mouseDown) return;
+                m_mouseDown = false;
+                m_PictureBox.Capture = false;   // 釋放捕獲
+
+                if (!m_isDragging) return;   // 非拖曳：Click 事件由 WinForms 自動觸發 → ShrinkImage
+                m_isDragging = false;
+
+                // 更新記憶中心點並通知父視窗持久化
+                m_pictureCenter = new Point(
+                    m_PictureBox.Left + m_PictureBox.Width / 2,
+                    m_PictureBox.Top + m_PictureBox.Height / 2);
+                PositionChanged?.Invoke(m_screenBounds, m_pictureCenter);
             }
 
             protected override void Dispose(bool disposing)
@@ -1573,6 +1699,9 @@ namespace Flower_Pomodoro_Timer
         {
             if (m_MinimumSizeOr)
             {
+                // 離開縮小模式前記住目前位置
+                m_MiniFormLocation = Location;
+                SaveMiniLocation();
                 m_MinimumSizeOr = false;
                 buttonMinimumSize.Text = "◢";
                 SetFormSizeNormal();
@@ -1642,10 +1771,38 @@ namespace Flower_Pomodoro_Timer
         }
 
         /// <summary>
+        /// 縮小模式（FormBorderStyle.None）下無標題列，覆寫 WM_NCHITTEST 讓
+        /// 非按鈕的空白區域回傳 HTCAPTION，使 Windows 以拖曳標題列方式移動視窗。
+        /// 按鈕區域維持 HTCLIENT，點擊仍正常觸發按鈕事件。
+        /// </summary>
+        protected override void WndProc(ref Message m)
+        {
+            base.WndProc(ref m);
+            const int WM_NCHITTEST = 0x0084;
+            const int HTCLIENT    = 1;
+            const int HTCAPTION   = 2;
+            if (m.Msg == WM_NCHITTEST
+                && m_MinimumSizeOr
+                && (int)m.Result == HTCLIENT)
+            {
+                Point clientPt = PointToClient(Cursor.Position);
+                Control? child = GetChildAtPoint(clientPt);
+                if (child is not ButtonBase)
+                    m.Result = (IntPtr)HTCAPTION;
+            }
+        }
+
+        /// <summary>
         /// 視窗關閉前：關閉子視窗、寫入今日使用紀錄、停止並釋放計時器與覆蓋圖片。
         /// </summary>
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
+            // 縮小模式下關閉程式，記住視窗位置供下次使用
+            if (m_MinimumSizeOr)
+            {
+                m_MiniFormLocation = Location;
+                SaveMiniLocation();
+            }
             CloseChildWindowsInOrder();
             WriteUsageLogForDate(m_CurrentDate);
             CloseAllRestImageOverlays();
