@@ -221,99 +221,99 @@ namespace Flower_Pomodoro_Timer
         }
 
         /// <summary>
-        /// 將視窗設定為標準大小（1360×400），並置中於主螢幕工作區域。
-        /// 同時設定計時標籤、Start 按鈕、效能橫條及視窗使用統計橫條的位置與尺寸。
+        /// 將以 96 DPI（100% 縮放）為基準的設計像素值，
+        /// 依目前視窗所在螢幕的 DPI 換算為實際邏輯像素數。
+        /// 字型 point size 已是設備無關單位，不需透過此方法換算。
+        /// </summary>
+        private int Dp(int designValue) => (int)Math.Round(designValue * DeviceDpi / 96.0);
+
+        /// <summary>
+        /// 將視窗設定為標準大小，並置中於主螢幕工作區域。
+        /// 所有 Size / Location 以 96 DPI（100%）為設計基準，
+        /// 透過 Dp() 依目前 DPI 自動縮放，解決自訂縮放下元件錯位與文字截斷的問題。
         /// </summary>
         private void SetFormSizeNormal()
         {
             this.FormBorderStyle = FormBorderStyle.Sizable;
             Screen screen = Screen.PrimaryScreen ?? Screen.AllScreens.First();
-            System.Drawing.Rectangle workingRectangle = screen.WorkingArea;
+            Rectangle workingRectangle = screen.WorkingArea;
 
-            MinimumSize = new Size(1360, 400);
-            MaximumSize = new Size(1360, 800);
-            Size = new Size(1360, 400);
+            // 視窗大小與位置（依 DPI 縮放）
+            MinimumSize = new Size(Dp(1360), Dp(400));
+            MaximumSize = new Size(Dp(1360), Dp(800));
+            Size = new Size(Dp(1360), Dp(400));
+            Location = new Point(
+                (workingRectangle.Width - Width) / 2,
+                (workingRectangle.Height - Height) / 2);
 
-            // 置中顯示
-            Point newPosition = new Point(0, 0);
-            newPosition.X = (workingRectangle.Width - this.Width) / 2;
-            newPosition.Y = (workingRectangle.Height - this.Height) / 2;
-            this.Location = newPosition;
+            // 計時標籤（字型 point size 不縮放，只縮放容器大小與位置）
+            labelTimer.Size     = new Size(Dp(140), Dp(60));
+            labelTimer.Font     = new Font(labelTimer.Font.FontFamily, 40, labelTimer.Font.Style);
+            labelTimer.Location = new Point(Dp(90), Dp(10));
 
-            labelTimer.Size = new Size(140, 60);
-            labelTimer.Font = new Font(labelTimer.Font.FontFamily, 40, labelTimer.Font.Style);
-            labelTimer.Location = new Point(90, 10);
+            buttonStart.Size        = new Size(Dp(70), Dp(40));
+            buttonStart.MaximumSize = new Size(Dp(70), Dp(40));
+            buttonStart.Font        = new Font(buttonStart.Font.FontFamily, 16, buttonStart.Font.Style);
+            buttonStart.Location    = new Point(Dp(120), Dp(80));
 
-            buttonStart.Size = new Size(70, 40);
-            buttonStart.MaximumSize = new Size(70, 40);
-            buttonStart.Font = new Font(buttonStart.Font.FontFamily, 16, buttonStart.Font.Style);
-            buttonStart.Location = new Point(120, 80);
-            //buttonStart_SizeChanged(this, EventArgs.Empty);
+            labelTotalTimer.Size     = new Size(Dp(130), Dp(40));
+            labelTotalTimer.Font     = new Font(labelTimer.Font.FontFamily, 24, labelTimer.Font.Style);
+            labelTotalTimer.Location = new Point(Dp(90), Dp(120));
 
-            labelTotalTimer.Size = new Size(130, 40);
-            labelTotalTimer.Font = new Font(labelTimer.Font.FontFamily, 24, labelTimer.Font.Style);
-            labelTotalTimer.Location = new Point(90, 120);
+            // 效能監控橫條（每條高 25dp，間距 3dp，從 Y=180dp 開始）
+            int barY = Dp(180), barW = Dp(310), barH = Dp(25), sp = Dp(3);
+            m_BarCPU.Bounds  = new Rectangle(Dp(20), barY, barW, barH); barY += barH + sp;
+            m_BarRAM.Bounds  = new Rectangle(Dp(20), barY, barW, barH); barY += barH + sp;
+            m_BarDisk.Bounds = new Rectangle(Dp(20), barY, barW, barH); barY += barH + sp;
+            m_BarGPU.Bounds  = new Rectangle(Dp(20), barY, barW, barH); barY += barH + sp;
+            m_BarVRAM.Bounds = new Rectangle(Dp(20), barY, barW, barH);
 
-            // 效能監控橫條：從 Y=180 開始，每條高 25px，間距 3px
-            int barY = 180;
-            int barWidth = 310;
-            int barHeight = 25;
-            int spacing = 3;
-            m_BarCPU.Bounds = new Rectangle(20, barY, barWidth, barHeight); barY += barHeight + spacing;
-            m_BarRAM.Bounds = new Rectangle(20, barY, barWidth, barHeight); barY += barHeight + spacing;
-            m_BarDisk.Bounds = new Rectangle(20, barY, barWidth, barHeight); barY += barHeight + spacing;
-            m_BarGPU.Bounds = new Rectangle(20, barY, barWidth, barHeight); barY += barHeight + spacing;
-            m_BarVRAM.Bounds = new Rectangle(20, barY, barWidth, barHeight);
-
-            // 視窗使用統計橫條：從 X=360 開始，佔滿剩餘寬度
-            m_FirstBar.Location = new Point(360, 0);
-            m_FirstBar.Size = new Size(Math.Max(1000, ClientSize.Width - 360), 30);
+            // 視窗使用統計橫條：從 X=360dp 開始，佔滿剩餘寬度
+            m_FirstBar.Location = new Point(Dp(360), 0);
+            m_FirstBar.Size     = new Size(Math.Max(Dp(1000), ClientSize.Width - Dp(360)), Dp(30));
         }
 
         /// <summary>
-        /// 將視窗縮小至右下角迷你模式（240×動態高），隱藏邊框，
-        /// 僅顯示計時器、效能橫條，不顯示視窗使用統計列表。
+        /// 將視窗縮小至迷你模式，隱藏邊框，僅顯示計時器與效能橫條。
+        /// 所有 Size / Location 同樣透過 Dp() 依 DPI 自動縮放。
         /// </summary>
         private void SetFormSizeMini()
         {
             this.FormBorderStyle = FormBorderStyle.None;
             Screen screen = Screen.PrimaryScreen ?? Screen.AllScreens.First();
-            System.Drawing.Rectangle workingRectangle = screen.WorkingArea;
+            Rectangle workingRectangle = screen.WorkingArea;
 
-            MinimumSize = new Size(240, 240);
-            MaximumSize = new Size(1360, 720);
-            Size = new Size(240, 240);
+            MinimumSize = new Size(Dp(180), Dp(240));
+            MaximumSize = new Size(Dp(1360), Dp(720));
+            Size        = new Size(Dp(240), Dp(240));
 
-            labelTimer.Size = new Size(140, 60);
-            labelTimer.Font = new Font(labelTimer.Font.FontFamily, 36, labelTimer.Font.Style);
-            labelTimer.Location = new Point(50, 30);
+            labelTimer.Size     = new Size(Dp(140), Dp(60));
+            labelTimer.Font     = new Font(labelTimer.Font.FontFamily, 36, labelTimer.Font.Style);
+            labelTimer.Location = new Point(Dp(50), Dp(30));
 
-            buttonStart.Size = new Size(44, 24);
-            buttonStart.Font = new Font(buttonStart.Font.FontFamily, 10, buttonStart.Font.Style);
-            buttonStart.Location = new Point(100, 90);
-            //buttonStart_SizeChanged(this, EventArgs.Empty);
+            buttonStart.Size        = new Size(Dp(44), Dp(24));
+            buttonStart.MaximumSize = Size.Empty;   // 迷你模式不限最大尺寸
+            buttonStart.Font        = new Font(buttonStart.Font.FontFamily, 10, buttonStart.Font.Style);
+            buttonStart.Location    = new Point(Dp(100), Dp(90));
 
-            labelTotalTimer.Size = new Size(100, 40);
-            labelTotalTimer.Font = new Font(labelTimer.Font.FontFamily, 20, labelTimer.Font.Style);
-            labelTotalTimer.Location = new Point(75, 125);
+            labelTotalTimer.Size     = new Size(Dp(100), Dp(40));
+            labelTotalTimer.Font     = new Font(labelTimer.Font.FontFamily, 20, labelTimer.Font.Style);
+            labelTotalTimer.Location = new Point(Dp(75), Dp(125));
 
-            int barY = 170;
-            int barWidth = 220;
-            int barHeight = 25;
-            int spacing = 3;
-            m_BarCPU.Bounds = new Rectangle(10, barY, barWidth, barHeight); barY += barHeight + spacing;
-            m_BarRAM.Bounds = new Rectangle(10, barY, barWidth, barHeight); barY += barHeight + spacing;
-            m_BarDisk.Bounds = new Rectangle(10, barY, barWidth, barHeight); barY += barHeight + spacing;
-            m_BarGPU.Bounds = new Rectangle(10, barY, barWidth, barHeight); barY += barHeight + spacing;
-            m_BarVRAM.Bounds = new Rectangle(10, barY, barWidth, barHeight);
+            int barY = Dp(170), barW = Dp(220), barH = Dp(25), sp = Dp(3);
+            m_BarCPU.Bounds  = new Rectangle(Dp(10), barY, barW, barH); barY += barH + sp;
+            m_BarRAM.Bounds  = new Rectangle(Dp(10), barY, barW, barH); barY += barH + sp;
+            m_BarDisk.Bounds = new Rectangle(Dp(10), barY, barW, barH); barY += barH + sp;
+            m_BarGPU.Bounds  = new Rectangle(Dp(10), barY, barW, barH); barY += barH + sp;
+            m_BarVRAM.Bounds = new Rectangle(Dp(10), barY, barW, barH);
 
-            // 動態調整高度以容納所有效能橫條
-            Height = barY + barHeight + 10;
-            MinimumSize = new Size(180, Height);
+            // 動態調整視窗高度以恰好容納所有效能橫條
+            Height      = barY + barH + Dp(10);
+            MinimumSize = new Size(Dp(180), Height);
 
-            // 預設放在螢幕右下角；若有上次拖曳後記住的位置則優先使用
+            // 優先使用上次拖曳後記住的位置，否則預設右下角
             this.Location = m_MiniFormLocation
-                ?? new Point(workingRectangle.Width - this.Width, workingRectangle.Height - this.Height);
+                ?? new Point(workingRectangle.Width - Width, workingRectangle.Height - Height);
         }
 
         /// <summary>

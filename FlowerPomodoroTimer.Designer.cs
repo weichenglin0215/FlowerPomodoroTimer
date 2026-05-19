@@ -69,7 +69,7 @@ namespace Flower_Pomodoro_Timer
             buttonStart.Location = new Point(120, 80);
             buttonStart.MaximumSize = new Size(200, 40);
             buttonStart.Name = "buttonStart";
-            buttonStart.Size = new Size(70, 37);
+            buttonStart.Size = new Size(84, 40);
             buttonStart.TabIndex = 1;
             buttonStart.Text = "Start";
             toolTipAll.SetToolTip(buttonStart, "啟動/暫停");
@@ -223,13 +223,13 @@ namespace Flower_Pomodoro_Timer
             labelPoetry.Font = new Font("標楷體", 12F, FontStyle.Regular, GraphicsUnit.Point, 136);
             labelPoetry.Location = new Point(93, 741);
             labelPoetry.Name = "labelPoetry";
-            labelPoetry.Size = new Size(55, 16);
+            labelPoetry.Size = new Size(69, 20);
             labelPoetry.TabIndex = 10;
             labelPoetry.Text = "label1";
             // 
             // formFlowerPomodoroTimer
             // 
-            AutoScaleDimensions = new SizeF(96F, 96F);
+            AutoScaleDimensions = new SizeF(120F, 120F);
             AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = Color.Tomato;
             ClientSize = new Size(1344, 773);
@@ -251,7 +251,7 @@ namespace Flower_Pomodoro_Timer
             Margin = new Padding(4);
             Name = "formFlowerPomodoroTimer";
             StartPosition = FormStartPosition.CenterScreen;
-            Text = "Flower Pomodoro Timer Ver 0.10.4.0   珍惜自己的一分一秒...";
+            Text = "Flower Pomodoro Timer Ver 0.10.5.0   珍惜自己的一分一秒...";
             ResumeLayout(false);
             PerformLayout();
 
