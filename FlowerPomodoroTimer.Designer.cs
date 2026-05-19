@@ -251,7 +251,7 @@ namespace Flower_Pomodoro_Timer
             Margin = new Padding(4);
             Name = "formFlowerPomodoroTimer";
             StartPosition = FormStartPosition.CenterScreen;
-            Text = "Flower Pomodoro Timer Ver 0.10.3.0   珍惜自己的一分一秒...";
+            Text = "Flower Pomodoro Timer Ver 0.10.4.0   珍惜自己的一分一秒...";
             ResumeLayout(false);
             PerformLayout();
 
