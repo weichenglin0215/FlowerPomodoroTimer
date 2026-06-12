@@ -140,14 +140,28 @@ namespace Flower_Pomodoro_Timer
         PerformanceCounter? m_DiskWriteCounter;
         List<PerformanceCounter> m_GpuUsageCounters = new List<PerformanceCounter>();
         List<PerformanceCounter> m_VramUsageCounters = new List<PerformanceCounter>();
-        /// <summary>VRAM 上限計數器（目前 Windows GPU 效能分類不提供 Dedicated Limit，保留備用）。</summary>
-        List<PerformanceCounter> m_VramLimitCounters = new List<PerformanceCounter>();
         List<PerformanceCounter> m_SharedVramUsageCounters = new List<PerformanceCounter>();
-        List<PerformanceCounter> m_SharedVramLimitCounters = new List<PerformanceCounter>();
         List<PerformanceCounter> m_ProcessDedicatedVramUsageCounters = new List<PerformanceCounter>();
         List<PerformanceCounter> m_ProcessSharedVramUsageCounters = new List<PerformanceCounter>();
         /// <summary>由 Registry 讀取的實體專屬 VRAM 容量（GB），用於效能計數器未提供上限時的備用值。</summary>
         float m_DedicatedVramTotalGb = 0f;
+        /// <summary>主計時器 tick 計數，用於把 GPU/VRAM 取樣降頻為 3 秒一次。</summary>
+        int m_MainTickCounter = 0;
+        /// <summary>視窗使用統計 tick 計數，用於把排序+重繪降頻為 3 秒一次。</summary>
+        int m_AWTickCounter = 0;
+        /// <summary>是否顯示左下五條效率橫條（CPU/RAM/Disk/GPU/VRAM）。
+        /// 預設 true；按下 buttonShowPerf 可暫停，暫停後不再呼叫 PerformanceCounter，最省 CPU。</summary>
+        bool m_PerfShown = true;
+
+        // ── 計時器（右側方框 Stopwatch，僅縮小模式可見） ────────────────
+        /// <summary>Stopwatch 專用計時器，每秒刷新 labelStopwatch。</summary>
+        System.Windows.Forms.Timer m_TimerStopwatch = null!;
+        /// <summary>已累積的時長（不含目前進行中的段落）。</summary>
+        TimeSpan m_StopwatchAccumulated = TimeSpan.Zero;
+        /// <summary>目前段落的起始時間（僅在 m_StopwatchRunning=true 時有意義）。</summary>
+        DateTime m_StopwatchSegmentStart;
+        /// <summary>計時器是否正在跑。</summary>
+        bool m_StopwatchRunning = false;
 
         #endregion
 
@@ -216,8 +230,19 @@ namespace Flower_Pomodoro_Timer
             InitializeActiveWindowTimer();
             SetFormSizeNormal();
             InitializePerformanceMonitoring();
+            InitializeStopwatchTimer();
             ChangeFormColor();
             m_TopMost = TopMost;
+        }
+
+        /// <summary>
+        /// 初始化 Stopwatch 計時器：1 秒一次，僅在使用者按下「Start」後才啟動。
+        /// </summary>
+        private void InitializeStopwatchTimer()
+        {
+            m_TimerStopwatch = new System.Windows.Forms.Timer();
+            m_TimerStopwatch.Interval = 1000;
+            m_TimerStopwatch.Tick += TimerStopwatch_Tick;
         }
 
         /// <summary>
@@ -271,6 +296,9 @@ namespace Flower_Pomodoro_Timer
             // 視窗使用統計橫條：從 X=360dp 開始，佔滿剩餘寬度
             m_FirstBar.Location = new Point(Dp(360), 0);
             m_FirstBar.Size     = new Size(Math.Max(Dp(1000), ClientSize.Width - Dp(360)), Dp(30));
+
+            // 正常模式不顯示 Stopwatch 方框
+            panelStopwatch.Visible = false;
         }
 
         /// <summary>
@@ -285,22 +313,42 @@ namespace Flower_Pomodoro_Timer
 
             MinimumSize = new Size(Dp(180), Dp(240));
             MaximumSize = new Size(Dp(1360), Dp(720));
-            Size        = new Size(Dp(240), Dp(240));
+            Size        = new Size(Dp(320), Dp(240));
 
+            // ─ 左欄：番茄時間 / 暫停鍵 / 總時間（全部靠左對齊） ─
             labelTimer.Size     = new Size(Dp(140), Dp(60));
             labelTimer.Font     = new Font(labelTimer.Font.FontFamily, 36, labelTimer.Font.Style);
-            labelTimer.Location = new Point(Dp(50), Dp(30));
+            labelTimer.Location = new Point(Dp(10), Dp(25));
 
             buttonStart.Size        = new Size(Dp(44), Dp(24));
             buttonStart.MaximumSize = Size.Empty;   // 迷你模式不限最大尺寸
             buttonStart.Font        = new Font(buttonStart.Font.FontFamily, 10, buttonStart.Font.Style);
-            buttonStart.Location    = new Point(Dp(100), Dp(90));
+            buttonStart.Location    = new Point(Dp(58), Dp(85));   // 置中於左欄 (10..150)
 
-            labelTotalTimer.Size     = new Size(Dp(100), Dp(40));
+            labelTotalTimer.Size     = new Size(Dp(140), Dp(40));
             labelTotalTimer.Font     = new Font(labelTimer.Font.FontFamily, 20, labelTimer.Font.Style);
-            labelTotalTimer.Location = new Point(Dp(75), Dp(125));
+            labelTotalTimer.Location = new Point(Dp(10), Dp(115));
 
-            int barY = Dp(170), barW = Dp(220), barH = Dp(25), sp = Dp(3);
+            // ─ 右欄：Stopwatch 方框 ─
+            panelStopwatch.Visible  = true;
+            panelStopwatch.Location = new Point(Dp(160), Dp(45));
+            panelStopwatch.Size     = new Size(Dp(130), Dp(100));
+
+            labelStopwatch.Font     = new Font("Arial Narrow", 30, FontStyle.Regular);
+            labelStopwatch.Size     = new Size(Dp(110), Dp(48));
+            labelStopwatch.Location = new Point(Dp(10), Dp(5));
+
+            int btnY = Dp(61);
+            buttonStopwatchStart.Size     = new Size(Dp(50), Dp(26));
+            buttonStopwatchStart.Location = new Point(Dp(10), btnY);
+            buttonStopwatchStart.Font     = new Font(buttonStopwatchStart.Font.FontFamily, 11, FontStyle.Regular);
+
+            buttonStopwatchReset.Size     = new Size(Dp(50), Dp(26));
+            buttonStopwatchReset.Location = new Point(Dp(69), btnY);
+            buttonStopwatchReset.Font     = new Font(buttonStopwatchReset.Font.FontFamily, 11, FontStyle.Regular);
+
+            // ─ 效能橫條（佔滿整個寬度） ─
+            int barY = Dp(160), barW = Dp(300), barH = Dp(25), sp = Dp(3);
             m_BarCPU.Bounds  = new Rectangle(Dp(10), barY, barW, barH); barY += barH + sp;
             m_BarRAM.Bounds  = new Rectangle(Dp(10), barY, barW, barH); barY += barH + sp;
             m_BarDisk.Bounds = new Rectangle(Dp(10), barY, barW, barH); barY += barH + sp;
@@ -437,7 +485,8 @@ namespace Flower_Pomodoro_Timer
             m_BarVRAM.Click += (s, e) =>
             {
                 RefreshGpuCounters();
-                UpdatePerformanceInfo();
+                UpdateCpuRamDiskInfo();
+                UpdateGpuVramInfo();
             };
         }
 
@@ -481,17 +530,15 @@ namespace Flower_Pomodoro_Timer
                 }
 
                 // GPU Adapter Memory 計數器（Dedicated/Shared 使用量）
+                // 註：Windows 標準 GPU 效能分類不提供 "Dedicated Limit" 與 "Shared Limit"，
+                // 故不建立上限計數器，總量改由 Registry 取得。
                 var vramCategory = new PerformanceCounterCategory("GPU Adapter Memory");
                 var vramNames = vramCategory.GetInstanceNames();
                 DisposeCounters(m_VramUsageCounters);
-                DisposeCounters(m_VramLimitCounters);
                 DisposeCounters(m_SharedVramUsageCounters);
-                DisposeCounters(m_SharedVramLimitCounters);
                 foreach (var name in vramNames)
                 {
                     try { m_VramUsageCounters.Add(new PerformanceCounter("GPU Adapter Memory", "Dedicated Usage", name)); } catch { }
-                    // 注意：Windows 標準 GPU 效能分類不提供 "Dedicated Limit" 和 "Shared Limit"，
-                    // 強制建立會拋出 InvalidOperationException，故不建立上限計數器。
                     try { m_SharedVramUsageCounters.Add(new PerformanceCounter("GPU Adapter Memory", "Shared Usage", name)); } catch { }
                 }
 
@@ -509,9 +556,7 @@ namespace Flower_Pomodoro_Timer
                 // Prime 所有計數器：第一次呼叫 NextValue() 通常回傳 0（rate-style 計數器需兩次取樣）
                 foreach (var counter in m_GpuUsageCounters) { try { counter.NextValue(); } catch { } }
                 foreach (var counter in m_VramUsageCounters) { try { counter.NextValue(); } catch { } }
-                foreach (var counter in m_VramLimitCounters) { try { counter.NextValue(); } catch { } }
                 foreach (var counter in m_SharedVramUsageCounters) { try { counter.NextValue(); } catch { } }
-                foreach (var counter in m_SharedVramLimitCounters) { try { counter.NextValue(); } catch { } }
                 foreach (var counter in m_ProcessDedicatedVramUsageCounters) { try { counter.NextValue(); } catch { } }
                 foreach (var counter in m_ProcessSharedVramUsageCounters) { try { counter.NextValue(); } catch { } }
             }
@@ -519,14 +564,10 @@ namespace Flower_Pomodoro_Timer
         }
 
         /// <summary>
-        /// 讀取所有效能計數器並更新五條效能橫條（CPU/RAM/Disk/GPU/VRAM）。
-        /// 每秒由 TimerMain_Tick 呼叫一次。
-        ///
-        /// VRAM 顯示邏輯：
-        /// - 優先使用有讀數（&gt;1MB）的來源（Dedicated 或 Shared）
-        /// - 若計數器無法提供總量上限，改用 Registry 讀取的實體 VRAM 容量
+        /// 讀取 CPU/RAM/Disk 計數器並更新對應橫條。每秒呼叫一次。
+        /// （GPU/VRAM 開銷較大，已移至 UpdateGpuVramInfo() 並改為 3 秒一次。）
         /// </summary>
-        private void UpdatePerformanceInfo()
+        private void UpdateCpuRamDiskInfo()
         {
             // 1. CPU 使用率
             float cpuVal = 0;
@@ -549,27 +590,38 @@ namespace Flower_Pomodoro_Timer
             float rMB = rVal / 1024f / 1024f;
             float wMB = wVal / 1024f / 1024f;
             m_BarDisk.SetBar($"Disk: R:{rMB:F1} W:{wMB:F1} MB/s", Math.Clamp((rMB + wMB) / 100f, 0, 1), Color.Orange, Color.White);
+        }
 
-            // 4. GPU 使用率（各引擎加總，夾制在 0~100%）
+        /// <summary>
+        /// 讀取 GPU/VRAM 計數器並更新對應橫條。
+        /// 此呼叫成本較高（內含數十~上百個 PerformanceCounter.NextValue），
+        /// 故由 TimerMain_Tick 每 3 秒呼叫一次。
+        ///
+        /// VRAM 顯示邏輯：
+        /// - 優先使用有讀數（&gt;1MB）的來源（Dedicated 或 Shared）
+        /// - Adapter Memory 讀為 0 時，退回各程序 Process Memory 計數器加總
+        /// - 上限由 Registry 讀取的實體 VRAM 容量提供
+        /// </summary>
+        private void UpdateGpuVramInfo()
+        {
+            // 1. GPU 使用率（各引擎加總，夾制在 0~100%）
             float gpuVal = 0;
+            
             foreach (var counter in m_GpuUsageCounters)
             {
                 try { gpuVal += counter.NextValue(); } catch { }
             }
+            
             gpuVal = Math.Clamp(gpuVal, 0f, 100f);
             m_BarGPU.SetBar($"GPU: {gpuVal:F1}%", gpuVal / 100f, Color.MediumPurple, Color.White);
 
-            // 5. VRAM 使用量
+            // 2. VRAM 使用量（先讀 Adapter 層級，較便宜）
             float vramVal = 0;
             foreach (var counter in m_VramUsageCounters) { try { vramVal += counter.NextValue(); } catch { } }
-            float vramLimit = 0;
-            foreach (var counter in m_VramLimitCounters) { try { vramLimit += counter.NextValue(); } catch { } }
             float sharedVramVal = 0;
             foreach (var counter in m_SharedVramUsageCounters) { try { sharedVramVal += counter.NextValue(); } catch { } }
-            float sharedVramLimit = 0;
-            foreach (var counter in m_SharedVramLimitCounters) { try { sharedVramLimit += counter.NextValue(); } catch { } }
 
-            // 若 Adapter Memory 計數器無讀數，改用 Process Memory 加總（備用路徑）
+            // Adapter Memory 計數器無讀數時，退回 Process Memory 加總（數量可能上百，盡量避免）
             if (vramVal <= 0)
             {
                 foreach (var counter in m_ProcessDedicatedVramUsageCounters) { try { vramVal += counter.NextValue(); } catch { } }
@@ -584,30 +636,17 @@ namespace Flower_Pomodoro_Timer
             string vramMode = "專屬GPU";
             bool dedicatedHasUsage = vramVal > usageSwitchThresholdBytes;
             bool sharedHasUsage = sharedVramVal > usageSwitchThresholdBytes;
-            bool dedicatedAvailable = vramLimit > 0;
-            bool sharedAvailable = sharedVramLimit > 0;
 
             if (sharedHasUsage && !dedicatedHasUsage)
             {
                 // iGPU 機器可能只有共享顯存有數值
                 vramVal = sharedVramVal;
-                vramLimit = sharedVramLimit;
-                vramMode = "共享";
-            }
-            else if (!dedicatedAvailable && sharedAvailable)
-            {
-                vramVal = sharedVramVal;
-                vramLimit = sharedVramLimit;
                 vramMode = "共享";
             }
 
             float vramUsedGB = vramVal / 1024f / 1024f / 1024f;
-            float vramTotalGB = vramLimit / 1024f / 1024f / 1024f;
-            if (vramTotalGB <= 0f)
-            {
-                // 效能計數器無法提供上限時，使用 Registry 讀取的實體 VRAM（預設 8GB）
-                vramTotalGB = m_DedicatedVramTotalGb > 0f ? m_DedicatedVramTotalGb : 8f;
-            }
+            // 上限改由 Registry 提供（Windows 計數器不提供 Dedicated/Shared Limit）
+            float vramTotalGB = m_DedicatedVramTotalGb > 0f ? m_DedicatedVramTotalGb : 8f;
             float vramRatio = Math.Clamp(vramUsedGB / vramTotalGB, 0, 1);
             float vramPercent = vramRatio * 100f;
             m_BarVRAM.SetBar(
@@ -1102,7 +1141,18 @@ namespace Flower_Pomodoro_Timer
                 RolloverToNewDay();
             }
 
-            UpdatePerformanceInfo();
+            // 效率顯示暫停時完全跳過，連 PerformanceCounter 都不呼叫，最省 CPU
+            if (m_PerfShown)
+            {
+                // CPU/RAM/Disk 每秒；GPU/VRAM 每 5 秒（成本較高）
+                UpdateCpuRamDiskInfo();
+                m_MainTickCounter++;
+                if (m_MainTickCounter >= 5)
+                {
+                    m_MainTickCounter = 0;
+                    UpdateGpuVramInfo();
+                }
+            }
 
             // 計算當前階段已用時長
             TimeSpan tmpTime = m_PhaseAccumulateTime + DateTime.Now.Subtract(m_NewPhaseStartTime);
@@ -1124,6 +1174,7 @@ namespace Flower_Pomodoro_Timer
                     {
                         ChangeWorkState(eWorkStates.REST);
                         TopMost = true;   // Rest 開始時強制最上層，確保使用者看到休息提醒
+                        UpdateAlwaysTopButtonText();
                     }
                     break;
                 case eWorkStates.REST:
@@ -1131,14 +1182,21 @@ namespace Flower_Pomodoro_Timer
                     {
                         ChangeWorkState(eWorkStates.WORK);
                         TopMost = m_TopMost;   // 恢復使用者自訂的最上層設定
+                        UpdateAlwaysTopButtonText();
                     }
                     break;
                 case eWorkStates.PAUSE:
                 default:
                     break;
             }
+        }
 
-            // 同步更新 PIN/UNPIN 按鈕文字
+        /// <summary>
+        /// 依目前 TopMost 狀態同步 PIN/UNPIN 按鈕文字與 tooltip。
+        /// 只在 TopMost 可能變動時呼叫（按鈕點擊、進入/離開 REST），不在每秒 Tick 內呼叫。
+        /// </summary>
+        private void UpdateAlwaysTopButtonText()
+        {
             buttonAlwaysTop.Text = TopMost ? "PIN" : "UNPIN";
             toolTipAll.SetToolTip(buttonAlwaysTop, "切換最上層顯示");
         }
@@ -1168,8 +1226,14 @@ namespace Flower_Pomodoro_Timer
                 if (string.IsNullOrEmpty(currentWindowTitle)) return;
 
                 CalAWParentSec(p.ProcessName, currentWindowTitle);
-                SortAWParentStatus();
-                SetAWParentStatusBars();
+                // 累計每秒做；排序+重繪較貴，降頻為每 5 秒一次（視覺上看不出差異）
+                m_AWTickCounter++;
+                if (m_AWTickCounter >= 5)
+                {
+                    m_AWTickCounter = 0;
+                    SortAWParentStatus();
+                    SetAWParentStatusBars();
+                }
                 LastWindow = hwnd;
             }
             catch (Exception)
@@ -1643,9 +1707,98 @@ namespace Flower_Pomodoro_Timer
         private void buttonAlwaysTop_Click(object sender, EventArgs e)
         {
             TopMost = !TopMost;
-            buttonAlwaysTop.Text = TopMost ? "PIN" : "UNPIN";
-            toolTipAll.SetToolTip(buttonAlwaysTop, "切換最上層顯示");
+            UpdateAlwaysTopButtonText();
             m_TopMost = TopMost;
+        }
+
+        /// <summary>
+        /// 「顯示效率」按鈕：在「顯示」與「暫停」之間切換五條效率橫條。
+        /// 暫停時跳過所有 PerformanceCounter 取樣與橫條重繪，最省 CPU。
+        /// </summary>
+        private void buttonShowPerf_Click(object sender, EventArgs e)
+        {
+            m_PerfShown = !m_PerfShown;
+
+            if (m_PerfShown)
+            {
+                // 顯示中 → 按鈕顯示「暫停」圖示（II），點擊可暫停
+                buttonShowPerf.Text = "II";
+                toolTipAll.SetToolTip(buttonShowPerf, "暫停顯示效率");
+                // 立刻刷新一次，避免使用者看到舊（灰色）數值
+                UpdateCpuRamDiskInfo();
+                UpdateGpuVramInfo();
+                m_MainTickCounter = 0;
+            }
+            else
+            {
+                // 已暫停 → 按鈕顯示「播放」圖示（▶），點擊可恢復
+                buttonShowPerf.Text = "▶";
+                toolTipAll.SetToolTip(buttonShowPerf, "恢復顯示效率");
+                // 五條橫條保持顯示但改為灰色，並標示已暫停狀態（仍可看見最後一次數值的位置）
+                Color gray = Color.DimGray;
+                m_BarCPU.SetBar("CPU: -- (暫停)",   0f, gray, Color.White);
+                m_BarRAM.SetBar("RAM: -- (暫停)",   0f, gray, Color.White);
+                m_BarDisk.SetBar("Disk: -- (暫停)", 0f, gray, Color.White);
+                m_BarGPU.SetBar("GPU: -- (暫停)",   0f, gray, Color.White);
+                m_BarVRAM.SetBar("VRAM: -- (暫停)", 0f, gray, Color.White);
+            }
+        }
+
+        /// <summary>
+        /// Stopwatch「開始/暫停」按鈕：未跑時開始，跑中時暫停（保留累計時長）。
+        /// </summary>
+        private void buttonStopwatchStart_Click(object sender, EventArgs e)
+        {
+            if (!m_StopwatchRunning)
+            {
+                m_StopwatchSegmentStart = DateTime.Now;
+                m_TimerStopwatch.Start();
+                m_StopwatchRunning = true;
+                buttonStopwatchStart.Text = "暫停";
+            }
+            else
+            {
+                // 暫停：把目前段落時間累進累計值
+                m_StopwatchAccumulated += DateTime.Now - m_StopwatchSegmentStart;
+                m_TimerStopwatch.Stop();
+                m_StopwatchRunning = false;
+                buttonStopwatchStart.Text = "Start";
+                UpdateStopwatchLabel();   // 停在精確秒數
+            }
+        }
+
+        /// <summary>
+        /// Stopwatch「重置」按鈕：停止並歸零。
+        /// </summary>
+        private void buttonStopwatchReset_Click(object sender, EventArgs e)
+        {
+            m_TimerStopwatch.Stop();
+            m_StopwatchRunning = false;
+            m_StopwatchAccumulated = TimeSpan.Zero;
+            buttonStopwatchStart.Text = "Start";
+            labelStopwatch.Text = "00:00";
+        }
+
+        /// <summary>
+        /// Stopwatch 每秒 Tick：刷新 labelStopwatch。
+        /// </summary>
+        private void TimerStopwatch_Tick(object? sender, EventArgs e)
+        {
+            UpdateStopwatchLabel();
+        }
+
+        /// <summary>
+        /// 依目前累計+當前段落計算總時長，更新標籤。
+        /// 1 小時內以 mm:ss 顯示，超過則自動切到 hh:mm:ss。
+        /// </summary>
+        private void UpdateStopwatchLabel()
+        {
+            TimeSpan total = m_StopwatchAccumulated;
+            if (m_StopwatchRunning)
+                total += DateTime.Now - m_StopwatchSegmentStart;
+            labelStopwatch.Text = total.TotalHours >= 1
+                ? total.ToString(@"hh\:mm\:ss")
+                : total.ToString(@"mm\:ss");
         }
 
         /// <summary>
@@ -1810,6 +1963,8 @@ namespace Flower_Pomodoro_Timer
             m_TimerMain?.Dispose();
             m_TimerActiveWindow?.Stop();
             m_TimerActiveWindow?.Dispose();
+            m_TimerStopwatch?.Stop();
+            m_TimerStopwatch?.Dispose();
             base.OnFormClosing(e);
         }
 

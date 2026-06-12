@@ -43,7 +43,13 @@ namespace Flower_Pomodoro_Timer
             toolTipAll = new ToolTip(components);
             buttonAlwaysTop = new Button();
             buttonOpacity = new Button();
+            buttonShowPerf = new Button();
+            labelStopwatch = new Label();
+            buttonStopwatchStart = new Button();
+            buttonStopwatchReset = new Button();
+            panelStopwatch = new Panel();
             labelPoetry = new Label();
+            panelStopwatch.SuspendLayout();
             SuspendLayout();
             // 
             // labelTimer
@@ -69,7 +75,7 @@ namespace Flower_Pomodoro_Timer
             buttonStart.Location = new Point(120, 80);
             buttonStart.MaximumSize = new Size(200, 40);
             buttonStart.Name = "buttonStart";
-            buttonStart.Size = new Size(84, 40);
+            buttonStart.Size = new Size(70, 37);
             buttonStart.TabIndex = 1;
             buttonStart.Text = "Start";
             toolTipAll.SetToolTip(buttonStart, "啟動/暫停");
@@ -217,24 +223,94 @@ namespace Flower_Pomodoro_Timer
             buttonOpacity.UseVisualStyleBackColor = true;
             buttonOpacity.Click += buttonOpacity_Click;
             // 
+            // buttonShowPerf
+            // 
+            buttonShowPerf.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonShowPerf.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            buttonShowPerf.FlatStyle = FlatStyle.Flat;
+            buttonShowPerf.Font = new Font("新細明體", 15F);
+            buttonShowPerf.ForeColor = Color.Brown;
+            buttonShowPerf.Location = new Point(1140, 0);
+            buttonShowPerf.Name = "buttonShowPerf";
+            buttonShowPerf.Size = new Size(30, 30);
+            buttonShowPerf.TabIndex = 11;
+            buttonShowPerf.Text = "II";
+            toolTipAll.SetToolTip(buttonShowPerf, "暫停顯示效率");
+            buttonShowPerf.UseVisualStyleBackColor = true;
+            buttonShowPerf.Click += buttonShowPerf_Click;
+            // 
+            // labelStopwatch
+            // 
+            labelStopwatch.Font = new Font("Arial Narrow", 30F);
+            labelStopwatch.ForeColor = Color.FromArgb(255, 224, 192);
+            labelStopwatch.Location = new Point(10, 5);
+            labelStopwatch.Name = "labelStopwatch";
+            labelStopwatch.Size = new Size(110, 48);
+            labelStopwatch.TabIndex = 0;
+            labelStopwatch.Text = "00:00";
+            labelStopwatch.TextAlign = ContentAlignment.MiddleCenter;
+            toolTipAll.SetToolTip(labelStopwatch, "計時器");
+            // 
+            // buttonStopwatchStart
+            // 
+            buttonStopwatchStart.FlatStyle = FlatStyle.Flat;
+            buttonStopwatchStart.Font = new Font("Arial", 10F);
+            buttonStopwatchStart.ForeColor = Color.Brown;
+            buttonStopwatchStart.Location = new Point(10, 61);
+            buttonStopwatchStart.Name = "buttonStopwatchStart";
+            buttonStopwatchStart.Size = new Size(50, 26);
+            buttonStopwatchStart.TabIndex = 1;
+            buttonStopwatchStart.Text = "Start";
+            toolTipAll.SetToolTip(buttonStopwatchStart, "開始/暫停");
+            buttonStopwatchStart.UseVisualStyleBackColor = true;
+            buttonStopwatchStart.Click += buttonStopwatchStart_Click;
+            // 
+            // buttonStopwatchReset
+            // 
+            buttonStopwatchReset.FlatStyle = FlatStyle.Flat;
+            buttonStopwatchReset.Font = new Font("Arial", 10F);
+            buttonStopwatchReset.ForeColor = Color.Brown;
+            buttonStopwatchReset.Location = new Point(69, 61);
+            buttonStopwatchReset.Name = "buttonStopwatchReset";
+            buttonStopwatchReset.Size = new Size(50, 26);
+            buttonStopwatchReset.TabIndex = 2;
+            buttonStopwatchReset.Text = "重置";
+            toolTipAll.SetToolTip(buttonStopwatchReset, "重置計時器為 00:00");
+            buttonStopwatchReset.UseVisualStyleBackColor = true;
+            buttonStopwatchReset.Click += buttonStopwatchReset_Click;
+            // 
+            // panelStopwatch
+            // 
+            panelStopwatch.BorderStyle = BorderStyle.FixedSingle;
+            panelStopwatch.Controls.Add(labelStopwatch);
+            panelStopwatch.Controls.Add(buttonStopwatchStart);
+            panelStopwatch.Controls.Add(buttonStopwatchReset);
+            panelStopwatch.ForeColor = SystemColors.ControlLightLight;
+            panelStopwatch.Location = new Point(1000, 350);
+            panelStopwatch.Name = "panelStopwatch";
+            panelStopwatch.Size = new Size(130, 100);
+            panelStopwatch.TabIndex = 12;
+            // 
             // labelPoetry
             // 
             labelPoetry.AutoSize = true;
             labelPoetry.Font = new Font("標楷體", 12F, FontStyle.Regular, GraphicsUnit.Point, 136);
             labelPoetry.Location = new Point(93, 741);
             labelPoetry.Name = "labelPoetry";
-            labelPoetry.Size = new Size(69, 20);
+            labelPoetry.Size = new Size(55, 16);
             labelPoetry.TabIndex = 10;
             labelPoetry.Text = "label1";
             // 
             // formFlowerPomodoroTimer
             // 
-            AutoScaleDimensions = new SizeF(120F, 120F);
+            AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = Color.Tomato;
             ClientSize = new Size(1344, 773);
             ControlBox = false;
             Controls.Add(labelPoetry);
+            Controls.Add(panelStopwatch);
+            Controls.Add(buttonShowPerf);
             Controls.Add(buttonOpacity);
             Controls.Add(buttonAlwaysTop);
             Controls.Add(buttonBackColor);
@@ -251,7 +327,8 @@ namespace Flower_Pomodoro_Timer
             Margin = new Padding(4);
             Name = "formFlowerPomodoroTimer";
             StartPosition = FormStartPosition.CenterScreen;
-            Text = "Flower Pomodoro Timer Ver 0.10.5.0   珍惜自己的一分一秒...";
+            Text = "Flower Pomodoro Timer Ver 0.11.0.0   珍惜自己的一分一秒...";
+            panelStopwatch.ResumeLayout(false);
             ResumeLayout(false);
             PerformLayout();
 
@@ -271,6 +348,11 @@ namespace Flower_Pomodoro_Timer
         private System.Windows.Forms.ToolTip toolTipAll;
         private System.Windows.Forms.Button buttonAlwaysTop;
         private System.Windows.Forms.Button buttonOpacity;
+        private System.Windows.Forms.Button buttonShowPerf;
+        private System.Windows.Forms.Panel panelStopwatch;
+        private System.Windows.Forms.Label labelStopwatch;
+        private System.Windows.Forms.Button buttonStopwatchStart;
+        private System.Windows.Forms.Button buttonStopwatchReset;
         private System.Windows.Forms.Label labelPoetry;
     }
 }
