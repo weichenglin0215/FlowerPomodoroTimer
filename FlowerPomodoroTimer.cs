@@ -141,12 +141,11 @@ namespace Flower_Pomodoro_Timer
         List<PerformanceCounter> m_GpuUsageCounters = new List<PerformanceCounter>();
         List<PerformanceCounter> m_VramUsageCounters = new List<PerformanceCounter>();
         List<PerformanceCounter> m_SharedVramUsageCounters = new List<PerformanceCounter>();
-        List<PerformanceCounter> m_ProcessDedicatedVramUsageCounters = new List<PerformanceCounter>();
-        List<PerformanceCounter> m_ProcessSharedVramUsageCounters = new List<PerformanceCounter>();
         /// <summary>由 Registry 讀取的實體專屬 VRAM 容量（GB），用於效能計數器未提供上限時的備用值。</summary>
         float m_DedicatedVramTotalGb = 0f;
-        /// <summary>主計時器 tick 計數，用於把 GPU/VRAM 取樣降頻為 3 秒一次。</summary>
-        int m_MainTickCounter = 0;
+        /// <summary>NVIDIA NVML 讀取器；非 NVIDIA 機器為 null，此時退回 PerformanceCounter 路徑。
+        /// 可用時 GPU 使用率與 VRAM 皆改由 NVML 一次取得，省去遍歷每個程序的顯存計數器。</summary>
+        NvmlGpuReader? m_Nvml;
         /// <summary>視窗使用統計 tick 計數，用於把排序+重繪降頻為 3 秒一次。</summary>
         int m_AWTickCounter = 0;
         /// <summary>是否顯示左下五條效率橫條（CPU/RAM/Disk/GPU/VRAM）。
@@ -461,6 +460,9 @@ namespace Flower_Pomodoro_Timer
                 m_DiskReadCounter = new PerformanceCounter("PhysicalDisk", "Disk Read Bytes/sec", "_Total");
                 m_DiskWriteCounter = new PerformanceCounter("PhysicalDisk", "Disk Write Bytes/sec", "_Total");
                 m_DedicatedVramTotalGb = GetDedicatedVramTotalGbFromRegistry();
+                // 優先嘗試 NVML（NVIDIA 卡）。成功則 GPU/VRAM 走 NVML，
+                // RefreshGpuCounters 會自動略過建立 GPU 計數器。
+                m_Nvml = NvmlGpuReader.TryCreate();
                 RefreshGpuCounters();
             }
             catch (Exception ex)
@@ -507,20 +509,32 @@ namespace Flower_Pomodoro_Timer
         }
 
         /// <summary>
-        /// 重新建立所有 GPU 相關的 PerformanceCounter：
+        /// 重新建立所有 GPU 相關的 PerformanceCounter（僅在 NVML 不可用時才需要）：
         /// - GPU Engine：各引擎使用率，加總後得到整體 GPU 使用率
-        /// - GPU Adapter Memory：Dedicated（專屬顯存）與 Shared（共享顯存）使用量
-        /// - GPU Process Memory：各程序的 Dedicated/Shared 顯存用量（備用讀取來源）
+        /// - GPU Adapter Memory：Dedicated（專屬顯存）與 Shared（共享顯存）系統總用量
         /// 建立後各讀取一次初始值（第一次 NextValue 通常為 0，需 prime 一遍）。
+        ///
+        /// NVML 可用（NVIDIA 卡）時直接 return，不建立任何 GPU 計數器。
         /// </summary>
         private void RefreshGpuCounters()
         {
+            // 先釋放既有計數器，避免重複建立時洩漏
+            DisposeCounters(m_GpuUsageCounters);
+            DisposeCounters(m_VramUsageCounters);
+            DisposeCounters(m_SharedVramUsageCounters);
+
+            // NVML 可用時，GPU 使用率與 VRAM 全部改由 NVML 取得，
+            // 完全不需要任何 GPU PerformanceCounter，直接略過建立流程（最省資源）。
+            if (m_Nvml?.Available == true)
+            {
+                return;
+            }
+
             try
             {
                 // GPU Engine 使用率計數器（只保留含 "engtype_" 的實例）
                 var category = new PerformanceCounterCategory("GPU Engine");
                 var names = category.GetInstanceNames();
-                DisposeCounters(m_GpuUsageCounters);
                 foreach (var name in names)
                 {
                     if (name.Contains("engtype_", StringComparison.OrdinalIgnoreCase))
@@ -534,38 +548,27 @@ namespace Flower_Pomodoro_Timer
                 // 故不建立上限計數器，總量改由 Registry 取得。
                 var vramCategory = new PerformanceCounterCategory("GPU Adapter Memory");
                 var vramNames = vramCategory.GetInstanceNames();
-                DisposeCounters(m_VramUsageCounters);
-                DisposeCounters(m_SharedVramUsageCounters);
                 foreach (var name in vramNames)
                 {
                     try { m_VramUsageCounters.Add(new PerformanceCounter("GPU Adapter Memory", "Dedicated Usage", name)); } catch { }
                     try { m_SharedVramUsageCounters.Add(new PerformanceCounter("GPU Adapter Memory", "Shared Usage", name)); } catch { }
                 }
 
-                // GPU Process Memory 計數器（各程序的顯存用量，作為 Adapter Memory 讀數為 0 時的備用）
-                var processVramCategory = new PerformanceCounterCategory("GPU Process Memory");
-                var processVramNames = processVramCategory.GetInstanceNames();
-                DisposeCounters(m_ProcessDedicatedVramUsageCounters);
-                DisposeCounters(m_ProcessSharedVramUsageCounters);
-                foreach (var name in processVramNames)
-                {
-                    try { m_ProcessDedicatedVramUsageCounters.Add(new PerformanceCounter("GPU Process Memory", "Dedicated Usage", name)); } catch { }
-                    try { m_ProcessSharedVramUsageCounters.Add(new PerformanceCounter("GPU Process Memory", "Shared Usage", name)); } catch { }
-                }
+                // 註：已移除 GPU Process Memory（逐程序顯存）計數器。
+                // 該來源需列舉上百個程序、成本高，且 DXGI 等替代 API 僅能取得「本程序」用量，
+                // 無法反映整張卡的系統總用量。系統總量改由上方 Adapter Memory 單一計數器提供。
 
                 // Prime 所有計數器：第一次呼叫 NextValue() 通常回傳 0（rate-style 計數器需兩次取樣）
                 foreach (var counter in m_GpuUsageCounters) { try { counter.NextValue(); } catch { } }
                 foreach (var counter in m_VramUsageCounters) { try { counter.NextValue(); } catch { } }
                 foreach (var counter in m_SharedVramUsageCounters) { try { counter.NextValue(); } catch { } }
-                foreach (var counter in m_ProcessDedicatedVramUsageCounters) { try { counter.NextValue(); } catch { } }
-                foreach (var counter in m_ProcessSharedVramUsageCounters) { try { counter.NextValue(); } catch { } }
             }
             catch { }
         }
 
         /// <summary>
         /// 讀取 CPU/RAM/Disk 計數器並更新對應橫條。每秒呼叫一次。
-        /// （GPU/VRAM 開銷較大，已移至 UpdateGpuVramInfo() 並改為 3 秒一次。）
+        /// （GPU/VRAM 另由 UpdateGpuVramInfo() 處理，現亦為每秒一次。）
         /// </summary>
         private void UpdateCpuRamDiskInfo()
         {
@@ -593,43 +596,40 @@ namespace Flower_Pomodoro_Timer
         }
 
         /// <summary>
-        /// 讀取 GPU/VRAM 計數器並更新對應橫條。
-        /// 此呼叫成本較高（內含數十~上百個 PerformanceCounter.NextValue），
-        /// 故由 TimerMain_Tick 每 3 秒呼叫一次。
+        /// 讀取 GPU/VRAM 並更新對應橫條。由 TimerMain_Tick 每秒呼叫一次。
         ///
-        /// VRAM 顯示邏輯：
-        /// - 優先使用有讀數（&gt;1MB）的來源（Dedicated 或 Shared）
-        /// - Adapter Memory 讀為 0 時，退回各程序 Process Memory 計數器加總
-        /// - 上限由 Registry 讀取的實體 VRAM 容量提供
+        /// 兩種資料來源：
+        /// - NVML（NVIDIA 卡）：一次呼叫直接取得 GPU 使用率與 VRAM total/used/free，O(1) 無遍歷。
+        /// - PerformanceCounter（fallback）：讀 GPU Engine 與 Adapter Memory 單一計數器
+        ///   （皆為系統總量，數量少），僅在 NVML 不可用時使用。
         /// </summary>
         private void UpdateGpuVramInfo()
         {
+            // 優先走 NVML：GPU 使用率與 VRAM 都由 driver 全域計數器一次取得
+            if (m_Nvml?.Available == true && UpdateGpuVramFromNvml())
+            {
+                return;
+            }
+
+            // ── 以下為非 NVIDIA 機器的 PerformanceCounter fallback ──
+
             // 1. GPU 使用率（各引擎加總，夾制在 0~100%）
             float gpuVal = 0;
-            
+
             foreach (var counter in m_GpuUsageCounters)
             {
                 try { gpuVal += counter.NextValue(); } catch { }
             }
-            
+
             gpuVal = Math.Clamp(gpuVal, 0f, 100f);
             m_BarGPU.SetBar($"GPU: {gpuVal:F1}%", gpuVal / 100f, Color.MediumPurple, Color.White);
 
-            // 2. VRAM 使用量（先讀 Adapter 層級，較便宜）
+            // 2. VRAM 使用量：僅讀 Adapter Memory 單一計數器（系統總量，成本低）。
+            //    已不再退回逐程序 Process Memory 加總。
             float vramVal = 0;
             foreach (var counter in m_VramUsageCounters) { try { vramVal += counter.NextValue(); } catch { } }
             float sharedVramVal = 0;
             foreach (var counter in m_SharedVramUsageCounters) { try { sharedVramVal += counter.NextValue(); } catch { } }
-
-            // Adapter Memory 計數器無讀數時，退回 Process Memory 加總（數量可能上百，盡量避免）
-            if (vramVal <= 0)
-            {
-                foreach (var counter in m_ProcessDedicatedVramUsageCounters) { try { vramVal += counter.NextValue(); } catch { } }
-            }
-            if (sharedVramVal <= 0)
-            {
-                foreach (var counter in m_ProcessSharedVramUsageCounters) { try { sharedVramVal += counter.NextValue(); } catch { } }
-            }
 
             // 選擇顯示專屬或共享 VRAM：優先顯示有實際使用量的那個
             const float usageSwitchThresholdBytes = 1f * 1024f * 1024f; // 1 MB
@@ -654,6 +654,38 @@ namespace Flower_Pomodoro_Timer
                 vramRatio,
                 Color.HotPink,
                 Color.White);
+        }
+
+        /// <summary>
+        /// 透過 NVML 一次取得 GPU 使用率與 VRAM（total/used/free），更新 GPU 與 VRAM 兩條橫條。
+        /// 讀取成功回傳 true；任一步驟失敗回傳 false，呼叫端會退回 PerformanceCounter 路徑。
+        /// </summary>
+        private bool UpdateGpuVramFromNvml()
+        {
+            // VRAM：total / used / free 一次取得（位元組）
+            if (m_Nvml == null || !m_Nvml.TryGetMemory(out ulong total, out ulong used, out ulong free))
+            {
+                return false;
+            }
+
+            // GPU 核心使用率（讀不到時以 0 顯示，不影響 VRAM 顯示）
+            float gpuPercent = m_Nvml.TryGetGpuUtilization(out uint gpu) ? gpu : 0f;
+            m_BarGPU.SetBar($"GPU: {gpuPercent:F1}%", gpuPercent / 100f, Color.MediumPurple, Color.White);
+
+            const float bytesPerGB = 1024f * 1024f * 1024f;
+            float usedGB = used / bytesPerGB;
+            float totalGB = total / bytesPerGB;
+            float freeGB = free / bytesPerGB;
+            float ratio = totalGB > 0f ? Math.Clamp(usedGB / totalGB, 0f, 1f) : 0f;
+            float percent = ratio * 100f;
+
+            // 直接呈現剩餘容量，這正是 NVML 路徑的核心優勢
+            m_BarVRAM.SetBar(
+                $"VRAM:{usedGB:F2}/{totalGB:F0}GB ({percent:F1}%) 剩餘{freeGB:F2}GB",
+                ratio,
+                Color.HotPink,
+                Color.White);
+            return true;
         }
 
         /// <summary>
@@ -1144,14 +1176,10 @@ namespace Flower_Pomodoro_Timer
             // 效率顯示暫停時完全跳過，連 PerformanceCounter 都不呼叫，最省 CPU
             if (m_PerfShown)
             {
-                // CPU/RAM/Disk 每秒；GPU/VRAM 每 5 秒（成本較高）
+                // CPU/RAM/Disk 與 GPU/VRAM 皆每秒刷新。
+                // GPU/VRAM 現由 NVML（O(1)）或單一 Adapter 計數器取得，成本已低，不再降頻。
                 UpdateCpuRamDiskInfo();
-                m_MainTickCounter++;
-                if (m_MainTickCounter >= 5)
-                {
-                    m_MainTickCounter = 0;
-                    UpdateGpuVramInfo();
-                }
+                UpdateGpuVramInfo();
             }
 
             // 計算當前階段已用時長
@@ -1727,7 +1755,6 @@ namespace Flower_Pomodoro_Timer
                 // 立刻刷新一次，避免使用者看到舊（灰色）數值
                 UpdateCpuRamDiskInfo();
                 UpdateGpuVramInfo();
-                m_MainTickCounter = 0;
             }
             else
             {
@@ -1965,6 +1992,8 @@ namespace Flower_Pomodoro_Timer
             m_TimerActiveWindow?.Dispose();
             m_TimerStopwatch?.Stop();
             m_TimerStopwatch?.Dispose();
+            // 釋放 NVML（呼叫 nvmlShutdown）
+            m_Nvml?.Dispose();
             base.OnFormClosing(e);
         }
 

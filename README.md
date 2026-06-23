@@ -32,8 +32,8 @@
     *   **CPU** 使用率 (%) — 每秒更新
     *   **RAM** 記憶體容量與比例 — 每秒更新
     *   **Disk** 磁碟讀寫速度 (MB/s) — 每秒更新
-    *   **GPU** 使用率 (%) — 每 3 秒更新（降頻優化）
-    *   **VRAM** 顯存佔用量 — 每 3 秒更新（降頻優化）
+    *   **GPU** 使用率 (%) — 每秒更新（NVIDIA 機器透過 NVML 取得，O(1) 開銷）
+    *   **VRAM** 顯存佔用量 — 每秒更新，NVIDIA 機器直接顯示「剩餘容量」
 *   **暫停顯示效率**：右上角新增「II/▶」按鈕，可暫停五條橫條的更新，完全停止 PerformanceCounter 取樣，極大降低 CPU 使用率（只在需要時才顯示）。
 
 ### 4. 工作排程 (Work Schedule)
@@ -85,14 +85,18 @@ null,13:30,17:30,寫程式與除錯
 *   **開發語言**：C#
 *   **框架**：WinForms (.NET 9)
 *   **監控技術**：
-    *   `System.Diagnostics.PerformanceCounter` (硬體數據，支援選擇性停用以降低 CPU)
+    *   `nvml.dll` (NVIDIA NVML，P/Invoke；主要 GPU/VRAM 資料來源，O(1) 全域計數器)
+    *   `System.Diagnostics.PerformanceCounter` (CPU/RAM/Disk；以及 NVML 不可用時的 GPU/VRAM fallback)
     *   `User32.dll` (視窗偵測 & 螢幕 DPI 感知)
     *   `Kernel32.dll` (記憶體狀態)
-    *   `Registry` (顯示卡 VRAM 容量讀取)
+    *   `Registry` (非 NVIDIA fallback 時的顯示卡 VRAM 容量讀取)
 *   **自定義控制項**：`BarChartBox` 負責高效能的繪圖渲染。
 *   **性能優化**：
-    *   **GPU/VRAM 降頻**：改為 3 秒更新一次（相比 CPU/RAM/Disk 的 1 秒），降低 PDH 查詢開銷。
-    *   **暫停效率顯示**：右上角「II/▶」按鈕可完全停止 PerformanceCounter 取樣，節省 CPU 資源。
+    *   **NVML 主路徑**：NVIDIA 機器透過 `nvmlDeviceGetMemoryInfo` 一次取得 total/used/free，
+        取代過去逐程序遍歷 `GPU Process Memory` 計數器的慢路徑，可直接顯示「剩餘 VRAM」。
+    *   **非 NVIDIA fallback 精簡**：僅讀 `GPU Adapter Memory` 單一系統總量計數器，
+        已移除上百個逐程序計數器的建立與遍歷。
+    *   **暫停效率顯示**：右上角「II/▶」按鈕可完全停止取樣，節省 CPU 資源。
     *   **視窗統計降頻**：排序與重繪改為 3 秒一次，視覺差異微乎其微但 CPU 用量顯著下降。
     *   **DPI 感知縮放**：採用 `PerMonitorV2` 模式，所有尺寸自動根據螢幕 DPI 縮放，避免高 DPI 下的模糊或錯位。
 
@@ -100,6 +104,7 @@ null,13:30,17:30,寫程式與除錯
 
 | 版本 | 日期 | 更新亮點 |
 | :--- | :--- | :--- |
+| **V0.12.0.0** | 2026-06-23 | GPU/VRAM 監控改用 NVIDIA NVML（`nvml.dll`，O(1)），NVIDIA 機器直接顯示「剩餘 VRAM」；移除非 NVIDIA 路徑中上百個逐程序顯存計數器的建立與遍歷；GPU/VRAM 取樣恢復為每秒一次。|
 | **V0.11.0.0** | 2026-06-12 | 新增獨立 Stopwatch 計時器（迷你模式）、暫停效率監控按鈕、CPU 優化（GPU/VRAM 降頻、視窗統計降頻）、迷你模式新布局（左欄番茄計時、右欄 Stopwatch）。|
 | **V0.10.5.0** | 2026-05-19 | 優化系統>顯示器>自訂縮放的比例。|
 | **V0.10.4.0** | 2026-05-19 | 新增統計排除LockApp。|
